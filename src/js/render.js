@@ -90,9 +90,11 @@ async function getPhotoImageByKey(key) {
                 state.photosMap[key] = result.dataUrl;
                 source = result.dataUrl;
             }
-        } else {
-            // IPC failed — try file:// URL as last resort (works for local files in Electron)
+        } else if (!window.__TAURI__) {
+            // IPC failed — try file:// URL as last resort (works in Electron, blocked in WebView2)
             source = 'file:///' + source.replace(/\\/g, '/').replace(/^\/+/, '');
+        } else {
+            source = null; // In Tauri/WebView2, file:// is blocked by CSP — give up
         }
     }
 

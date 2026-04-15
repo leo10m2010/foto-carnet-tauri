@@ -108,6 +108,8 @@
     async function handlePhotosFilesInput(input) {
         const paths = await invoke('pick_photo_files').catch(() => []);
         if (!paths.length) return;
+        if (paths.length > 5 && typeof showToast === 'function')
+            showToast(`Cargando ${paths.length} fotos…`, 'info');
         const files = await pathsToFiles(paths);
         injectFilesIntoInput(input, files);
     }
@@ -115,6 +117,8 @@
     async function handlePhotosFolderInput(input) {
         const paths = await invoke('pick_photos_from_folder').catch(() => []);
         if (!paths.length) return;
+        if (paths.length > 5 && typeof showToast === 'function')
+            showToast(`Cargando ${paths.length} fotos…`, 'info');
         const files = await pathsToFiles(paths);
         injectFilesIntoInput(input, files);
     }

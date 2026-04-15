@@ -53,8 +53,8 @@ async function restoreSession() {
         const data = JSON.parse(raw);
         if (!data.v || data.v < 2 || !Array.isArray(data.records) || !data.records.length) return false;
 
-        // Discard sessions older than 7 days
-        if (Date.now() - data.savedAt > 7 * 24 * 60 * 60 * 1000) {
+        // Discard sessions older than 30 days
+        if (Date.now() - data.savedAt > 30 * 24 * 60 * 60 * 1000) {
             localStorage.removeItem(SESSION_KEY);
             return false;
         }
@@ -151,9 +151,58 @@ async function restoreSession() {
             `Sesión restaurada (${ageText} atrás) — ${state.records.length} registros, ${state.photosCount} fotos`,
             'info'
         );
+
+        // Background preload: load all session photos in parallel after restore
+        // so the filmstrip and navigation feel instant instead of loading on demand.
+        _preloadSessionPhotos();
+
         return true;
     } catch (err) {
         console.warn('[Sesión] Error al restaurar:', err);
         return false;
     }
+}
+
+// Preload all session photos in the background using batch IPC (rayon parallel in Rust).
+// Populates state.photosMap with blob URLs so renders and filmstrip are instant.
+async function _preloadSessionPhotos() {
+    if (!window.electronAPI?.readFilesBatch) return;
+
+    const entries = Object.entries(state.photosMap).filter(([, v]) =>
+        v && !v.startsWith('blob:') && !v.startsWith('data:')
+    );
+    if (!entries.length) return;
+
+    const keys   = entries.map(([k]) => k);
+    const paths  = entries.map(([, v]) => v);
+
+    let results;
+    try {
+        results = await window.electronAPI.readFilesBatch(paths);
+    } catch (_) {
+        return; // Non-critical — lazy loading will handle it on demand
+    }
+
+    for (let i = 0; i < keys.length; i++) {
+        const result = results[i];
+        if (!result?.ok) continue;
+        // Only update if still a raw path (user may have changed photos since)
+        const current = state.photosMap[keys[i]];
+        if (!current || current.startsWith('blob:') || current.startsWith('data:')) continue;
+        try {
+            const [header, b64] = result.dataUrl.split(',');
+            const mime = header.match(/:(.*?);/)[1];
+            const bytes = atob(b64);
+            const arr = new Uint8Array(bytes.length);
+            for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
+            const objUrl = URL.createObjectURL(new Blob([arr], { type: mime }));
+            state.photosMap[keys[i]] = objUrl;
+            state.photoObjectUrls.push(objUrl);
+        } catch (_) {
+            state.photosMap[keys[i]] = result.dataUrl;
+        }
+    }
+
+    // Refresh filmstrip now that photos are ready
+    renderFilmstrip();
 }

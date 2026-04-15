@@ -566,7 +566,7 @@ async function exportPDF() {
             slotIdx++;
             if (slotIdx >= perPage) slotIdx = 0;
 
-            if (i % 5 === 0) await new Promise(r => setTimeout(r, 10)); // Yield to UI thread
+            await new Promise(r => setTimeout(r, 0)); // Yield to UI thread every record
         }
 
         assertJobNotCancelled();
@@ -629,7 +629,7 @@ async function printAll() {
             await renderCarnet(i, offCanvas, 3);
             imgTags.push(`<div class="carnet-wrapper"><img src="${offCanvas.toDataURL('image/jpeg', 0.95)}" class="carnet-img"></div>`);
             offCanvas.width = 0; offCanvas.height = 0; // free canvas memory
-            if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
+            await new Promise(r => setTimeout(r, 0));
         }
 
         assertJobNotCancelled();
