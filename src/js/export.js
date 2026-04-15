@@ -600,7 +600,6 @@ async function printAll() {
     beginJob('print');
     showModal('Preparando impresión...', `Renderizando carnet 0 de ${state.records.length}`, true);
 
-    let printWindow = null;
     try {
         const check = await runPreflightCheck({ silent: true, showToastOnPass: false });
         assertJobNotCancelled();
@@ -609,53 +608,54 @@ async function printAll() {
             return;
         }
 
-        // Adjust max-width based on user input for CM
         const customW = document.getElementById('pdf-width-cm');
         const maxWidthMM = Math.max(10, (Number.parseFloat(customW?.value) || 5.4) * 10);
 
-        printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            showToast('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes e inténtalo otra vez.', 'error');
-            return;
-        }
-        printWindow.document.write(`<html><head><title>Carnets — Impresión</title>
-            <style>
-                body { margin: 0; padding: 10mm; font-family: Arial; text-align: center; }
-                .carnet-wrapper { display: inline-block; margin: 3mm; page-break-inside: avoid; }
-                .carnet-img { max-width: ${maxWidthMM}mm; border: 1px dotted #ccc; }
-                @media print { body { padding: 5mm; } .carnet-img { border: none; } }
-            </style></head><body>`);
+        const style = `
+            body { margin:0; padding:10mm; font-family:Arial; text-align:center; background:#fff; }
+            .carnet-wrapper { display:inline-block; margin:3mm; page-break-inside:avoid; }
+            .carnet-img { max-width:${maxWidthMM}mm; border:1px dotted #ccc; display:block; }
+            @media print { body { padding:5mm; } .carnet-img { border:none; } }`;
 
+        // Render all carnets and collect as data URLs
+        const imgTags = [];
         for (let i = 0; i < state.records.length; i++) {
             assertJobNotCancelled();
-            updateModal(`Renderizando carnet ${i + 1} de ${state.records.length}`, ((i + 1) / state.records.length) * 100);
-            
-            // Render in high-res (3x scale)
+            updateModal(
+                `Renderizando carnet ${i + 1} de ${state.records.length}`,
+                ((i + 1) / state.records.length) * 100
+            );
             const offCanvas = document.createElement('canvas');
             await renderCarnet(i, offCanvas, 3);
-            
-            // Use JPEG 0.95 to keep browser memory usage low
-            printWindow.document.write(`
-                <div class="carnet-wrapper">
-                    <img src="${offCanvas.toDataURL('image/jpeg', 0.95)}" class="carnet-img">
-                </div>
-            `);
-            
-            if (i % 5 === 0) await new Promise(r => setTimeout(r, 10)); // Yield to UI
+            imgTags.push(`<div class="carnet-wrapper"><img src="${offCanvas.toDataURL('image/jpeg', 0.95)}" class="carnet-img"></div>`);
+            offCanvas.width = 0; offCanvas.height = 0; // free canvas memory
+            if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
         }
 
         assertJobNotCancelled();
-        printWindow.document.write('</body></html>');
-        printWindow.document.close();
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Carnets — Impresión</title><style>${style}</style></head>
+<body>${imgTags.join('\n')}
+<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},300);});<\/script>
+</body></html>`;
 
-        // Wait for images to load before calling print()
-        printWindow.onload = () => {
-            setTimeout(() => printWindow.print(), 200);
-        };
-        showToast('Diálogo de impresión preparado', 'info');
+        if (window.electronAPI?.openPrintPreview) {
+            // Tauri: window.open() está bloqueado → abrir en el navegador del sistema
+            await window.electronAPI.openPrintPreview(html);
+            showToast('Vista de impresión abierta en el navegador del sistema', 'info');
+        } else {
+            // Electron / browser: usar window.open tradicional
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                showToast('El navegador bloqueó la ventana. Permite ventanas emergentes e inténtalo otra vez.', 'error');
+                return;
+            }
+            printWindow.document.write(html);
+            printWindow.document.close();
+            showToast('Diálogo de impresión preparado', 'info');
+        }
     } catch (err) {
         if (isJobCancelledError(err)) {
-            if (printWindow && !printWindow.closed) printWindow.close();
             showToast('Impresión cancelada por el usuario', 'warning');
         } else {
             showToast(`Error al preparar impresión: ${err.message || err}`, 'error');

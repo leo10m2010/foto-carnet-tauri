@@ -1,4 +1,9 @@
-const RENIEC_TOKEN = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6InRoZXJlbmF0b2VtQGdtYWlsLmNvbSJ9.CGxlSecmJ6IQP7esT6LtQNwQ64u9q_rOYou0qyXdQt0';
+// Token RENIEC: se lee desde el input de la UI (guardado en localStorage).
+// El usuario puede actualizarlo en la sección de datos sin tocar el código.
+function getReniecToken() {
+    return localStorage.getItem('reniec-token') ||
+        document.getElementById('field-reniec-token')?.value?.trim() || '';
+}
 
 async function enrichWithRENIEC() {
     // Capture the generation token at the moment this query starts.
@@ -31,13 +36,18 @@ async function enrichWithRENIEC() {
         try {
             let json;
 
+            const token = getReniecToken();
+            if (!token) {
+                throw new Error('Configura tu token RENIEC en la sección de datos.');
+            }
+
             if (window.electronAPI?.queryRENIEC) {
-                const result = await window.electronAPI.queryRENIEC(dni, RENIEC_TOKEN);
+                const result = await window.electronAPI.queryRENIEC(dni, token);
                 if (!result.ok) throw new Error(result.error);
                 json = result.body;
             } else {
                 const resp = await fetch(
-                    `https://dniruc.apisperu.com/api/v1/dni/${dni}?token=${RENIEC_TOKEN}`
+                    `https://dniruc.apisperu.com/api/v1/dni/${dni}?token=${token}`
                 );
                 json = await resp.json();
             }

@@ -306,8 +306,8 @@ fn pick_data_file(app: tauri::AppHandle) -> Option<String> {
         .and_then(path_to_string)
 }
 
-/// Improvement (PDF nativo): show a native "Save As" dialog and return the chosen path.
-/// `extension` must be without dot, e.g. "pdf", "zip", "png".
+/// Show a native "Save As" dialog and return the chosen path.
+/// Guarantees the returned path ends with the correct extension.
 #[tauri::command]
 fn pick_save_path(
     default_name: String,
@@ -316,12 +316,42 @@ fn pick_save_path(
     app: tauri::AppHandle,
 ) -> Option<String> {
     use tauri_plugin_dialog::DialogExt;
-    app.dialog().file()
+    let path = app.dialog().file()
         .add_filter(&filter_name, &[extension.as_str()])
         .set_file_name(&default_name)
         .blocking_save_file()
         .and_then(|fp| fp.into_path().ok())
-        .and_then(path_to_string)
+        .and_then(path_to_string)?;
+
+    // Some OS dialogs don't append the extension automatically.
+    let ext_dot = format!(".{}", extension.to_lowercase());
+    if path.to_lowercase().ends_with(&ext_dot) {
+        Some(path)
+    } else {
+        Some(format!("{}{}", path, ext_dot))
+    }
+}
+
+/// Write an HTML string to a temp file and open it in the default browser.
+/// Used by printAll() because Tauri blocks window.open() by default.
+#[tauri::command]
+fn open_print_preview(html: String, app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let temp_path = std::env::temp_dir().join("fotocarnet_preview.html");
+    std::fs::write(&temp_path, html.as_bytes())
+        .map_err(|e| format!("No se pudo escribir archivo temporal: {}", e))?;
+
+    let path_str = temp_path.to_str().unwrap_or("").replace('\\', "/");
+    let file_url = if path_str.starts_with('/') {
+        format!("file://{}", path_str)
+    } else {
+        format!("file:///{}", path_str)
+    };
+
+    app.opener()
+        .open_url(&file_url, None::<&str>)
+        .map_err(|e| format!("No se pudo abrir el navegador: {}", e))
 }
 
 /// Improvement (PDF nativo): write base64-encoded data (or a data-URI) to a file on disk.
@@ -361,6 +391,7 @@ pub fn run() {
             pick_data_file,
             pick_save_path,
             save_base64_to_file,
+            open_print_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error al iniciar FotoCarnet");

@@ -10,6 +10,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     initFilmstrip();
     const savedMode = localStorage.getItem('carnet-ui-mode') || 'simple';
     setUIMode(savedMode);
+    // Restore saved RENIEC token into the input field
+    const savedToken = localStorage.getItem('reniec-token');
+    if (savedToken) {
+        const tokenInput = document.getElementById('field-reniec-token');
+        if (tokenInput) tokenInput.value = savedToken;
+    }
     await restoreSession();
     setupUpdateBanner();
 });

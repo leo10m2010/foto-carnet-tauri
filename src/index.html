@@ -148,6 +148,17 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Token RENIEC -->
+                        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);">
+                            <label style="font-size:0.78rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em;display:block;margin-bottom:6px;">
+                                <i data-lucide="key-round" style="width:12px;height:12px;vertical-align:-1px;margin-right:4px;"></i>Token RENIEC (apisperu.com)
+                            </label>
+                            <input type="password" id="field-reniec-token" placeholder="Pega tu JWT de apisperu.com"
+                                style="width:100%;box-sizing:border-box;font-size:0.8rem;padding:6px 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-input);color:var(--text-primary);"
+                                oninput="localStorage.setItem('reniec-token', this.value.trim())">
+                            <p style="font-size:0.73rem;color:var(--text-muted);margin:5px 0 0;">Obtén tu token gratis en <strong>apisperu.com</strong>. Se guarda localmente.</p>
+                        </div>
                     </div>
                 </div>
 

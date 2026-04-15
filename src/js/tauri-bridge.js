@@ -45,6 +45,11 @@
         // Escribe datos base64 (o data-URI) en un archivo del disco
         saveFile: (path, base64Data) =>
             invoke('save_base64_to_file', { path, base64Data }),
+
+        // Escribe HTML en un archivo temporal y lo abre en el navegador del sistema
+        // (reemplaza window.open() para impresión, que Tauri bloquea por defecto)
+        openPrintPreview: (html) =>
+            invoke('open_print_preview', { html }),
     };
 
     // Auto-verificar 5 s tras carga (igual que Electron)
