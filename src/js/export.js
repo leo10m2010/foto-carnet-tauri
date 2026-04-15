@@ -262,13 +262,35 @@ function sanitizeFileComponent(value, fallback = 'archivo') {
     return (base || fallback).replace(/\s/g, '_').slice(0, 120);
 }
 
-function downloadBlob(blob, filename) {
+async function downloadBlob(blob, filename) {
+    // Tauri: use native "Save As" dialog so the user picks the destination folder.
+    if (window.electronAPI?.pickSavePath && window.electronAPI?.saveFile) {
+        const ext = filename.split('.').pop().toLowerCase() || 'bin';
+        const filterLabels = { pdf: 'Documento PDF', zip: 'Archivo ZIP', png: 'Imagen PNG' };
+        const filterLabel = filterLabels[ext] || ext.toUpperCase();
+
+        const savePath = await window.electronAPI.pickSavePath(filename, filterLabel, ext);
+        if (!savePath) return false; // user cancelled
+
+        // Convert blob → base64 via FileReader
+        const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+        await window.electronAPI.saveFile(savePath, base64);
+        return savePath; // truthy = saved via native dialog
+    }
+
+    // Browser/Electron fallback
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return false;
 }
 
 const JOB_CANCELLED_ERROR = '__JOB_CANCELLED__';
@@ -332,8 +354,9 @@ async function exportPNG() {
         const pngBlob = await canvasToBlob(offCanvas, 'image/png');
         assertJobNotCancelled();
 
-        downloadBlob(pngBlob, `carnet_${sanitizeFileComponent(dniValue)}_${dpi}dpi.png`);
-        showToast('PNG descargado en alta calidad', 'success');
+        const pngFilename = `carnet_${sanitizeFileComponent(dniValue)}_${dpi}dpi.png`;
+        const pngSaved = await downloadBlob(pngBlob, pngFilename);
+        showToast(pngSaved ? `PNG guardado: ${String(pngSaved).split(/[\\/]/).pop()}` : 'PNG descargado en alta calidad', 'success');
     } catch (err) {
         if (isJobCancelledError(err)) {
             showToast('Exportación cancelada por el usuario', 'warning');
@@ -404,8 +427,13 @@ async function exportAllZIP() {
 
         assertJobNotCancelled();
         const fileName = `carnets_${widthCM.toFixed(1)}x${heightCM.toFixed(1)}cm_${dpi}dpi.zip`.replace(/\s/g, '');
-        downloadBlob(zipBlob, fileName);
-        showToast(`ZIP generado: ${state.records.length} carnets individuales`, 'success');
+        const zipSaved = await downloadBlob(zipBlob, fileName);
+        showToast(
+            zipSaved
+                ? `ZIP guardado: ${state.records.length} carnets en ${String(zipSaved).split(/[\\/]/).pop()}`
+                : `ZIP generado: ${state.records.length} carnets individuales`,
+            'success'
+        );
     } catch (err) {
         if (isJobCancelledError(err)) {
             showToast('Exportación ZIP cancelada por el usuario', 'warning');
@@ -540,8 +568,15 @@ async function exportPDF() {
         }
 
         assertJobNotCancelled();
-        pdf.save('carnets_masivos.pdf');
-        showToast(`PDF ${pageSize.toUpperCase()} generado con ${state.records.length} carnets @ ${exportDPI} DPI`, 'success');
+        const pdfFilename = `carnets_${pageSize.toUpperCase()}_${exportDPI}dpi.pdf`;
+        const pdfBlob = new Blob([pdf.output('arraybuffer')], { type: 'application/pdf' });
+        const pdfSaved = await downloadBlob(pdfBlob, pdfFilename);
+        showToast(
+            pdfSaved
+                ? `PDF guardado: ${String(pdfSaved).split(/[\\/]/).pop()} (${state.records.length} carnets @ ${exportDPI} DPI)`
+                : `PDF ${pageSize.toUpperCase()} generado con ${state.records.length} carnets @ ${exportDPI} DPI`,
+            'success'
+        );
     } catch (err) {
         if (isJobCancelledError(err)) {
             showToast('Exportación PDF cancelada por el usuario', 'warning');

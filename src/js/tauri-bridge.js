@@ -16,8 +16,15 @@
         // RENIEC (CORS bloqueado en renderer → Rust)
         queryRENIEC: (dni, token) => invoke('reniec_query', { dni, token }),
 
-        // Lee archivo por ruta (sesión anterior)
+        // Lee un archivo por ruta como data URL (caché + validación de mtime)
         readFileAsDataURL: (filePath) => invoke('read_file_as_dataurl', { filePath }),
+
+        // Lee un thumbnail pequeño (maxDim px, default 200) — para previews de sesión
+        readAsThumbnail: (filePath, maxDim = 200) =>
+            invoke('read_as_thumbnail', { filePath, maxDim }),
+
+        // Lee un lote de archivos en paralelo (rayon en Rust) — mucho más rápido que N llamadas
+        readFilesBatch: (filePaths) => invoke('read_files_batch', { filePaths }),
 
         // Devuelve el path guardado en el File por el dialog interceptor
         getPathForFile: (file) => file._tauriPath || '',
@@ -30,6 +37,14 @@
             invoke('check_for_updates')
                 .then(info => { if (info) _fireUpdate(info); return !!info; })
                 .catch(() => false),
+
+        // Diálogo nativo "Guardar como" — devuelve la ruta elegida o null si cancela
+        pickSavePath: (defaultName, filterName, extension) =>
+            invoke('pick_save_path', { defaultName, filterName, extension }),
+
+        // Escribe datos base64 (o data-URI) en un archivo del disco
+        saveFile: (path, base64Data) =>
+            invoke('save_base64_to_file', { path, base64Data }),
     };
 
     // Auto-verificar 5 s tras carga (igual que Electron)
@@ -48,12 +63,23 @@
     }
 
     async function pathsToFiles(paths) {
-        const files = await Promise.all(paths.map(async path => {
-            const result = await invoke('read_file_as_dataurl', { filePath: path }).catch(() => null);
+        // Improvement 3: single IPC call → Rust reads all files in parallel (rayon).
+        let results;
+        try {
+            results = await invoke('read_files_batch', { filePaths: paths });
+        } catch (_) {
+            // Fallback: read one by one if batch command fails
+            results = await Promise.all(
+                paths.map(p => invoke('read_file_as_dataurl', { filePath: p }).catch(() => null))
+            );
+        }
+
+        const files = await Promise.all(paths.map(async (path, i) => {
+            const result = results[i];
             if (!result?.ok) return null;
             const name = path.replace(/\\/g, '/').split('/').pop();
             const file = await dataUrlToFile(result.dataUrl, name);
-            file._tauriPath = path; // getPathForFile lo leerá aquí
+            file._tauriPath = path;
             return file;
         }));
         return files.filter(Boolean);

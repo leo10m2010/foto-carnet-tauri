@@ -1,14 +1,24 @@
 use base64::Engine;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::RwLock;
+use std::time::SystemTime;
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
+struct CacheEntry {
+    data_url: String,
+    /// Last-modified time at the moment of caching — used for invalidation.
+    mtime: SystemTime,
+}
+
 /// Shared state across Tauri commands.
 struct AppState {
-    /// Bug-fix 3: cache path → data URL to avoid re-reading disk on session restore.
-    file_cache: Mutex<HashMap<String, String>>,
+    /// Full-res photo cache: path → CacheEntry. RwLock allows concurrent reads.
+    file_cache: RwLock<HashMap<String, CacheEntry>>,
+    /// Thumbnail cache (separate so full-res and thumb don't evict each other).
+    thumb_cache: RwLock<HashMap<String, CacheEntry>>,
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -64,8 +74,7 @@ fn path_to_string(p: std::path::PathBuf) -> Option<String> {
 
 const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "bmp", "webp", "gif"];
 
-/// Max dimension (px) for either side of a photo sent to the renderer.
-/// Enough for any carnet print quality; prevents sending 4K+ images over IPC.
+/// Maximum dimension for full-res photos sent over IPC (enough for any carnet print quality).
 const MAX_DIM: u32 = 1600;
 
 fn is_image_path(path: &std::path::Path) -> bool {
@@ -85,9 +94,8 @@ fn mime_for_ext(ext: &str) -> &'static str {
     }
 }
 
-/// Bug-fix 1: resize oversized images in Rust before base64-encoding them.
-/// Avoids sending multi-MB strings over IPC for every photo.
-fn encode_as_dataurl(data: &[u8], ext: &str) -> String {
+/// Encode raw image bytes as a base64 data URL, resizing if larger than `max_dim`.
+fn encode_as_dataurl(data: &[u8], ext: &str, max_dim: u32) -> String {
     use image::ImageFormat;
 
     let fmt = match ext {
@@ -101,8 +109,8 @@ fn encode_as_dataurl(data: &[u8], ext: &str) -> String {
 
     if let Some(fmt) = fmt {
         if let Ok(img) = image::load_from_memory_with_format(data, fmt) {
-            if img.width() > MAX_DIM || img.height() > MAX_DIM {
-                let resized = img.resize(MAX_DIM, MAX_DIM, image::imageops::FilterType::CatmullRom);
+            if img.width() > max_dim || img.height() > max_dim {
+                let resized = img.resize(max_dim, max_dim, image::imageops::FilterType::CatmullRom);
                 let mut buf: Vec<u8> = Vec::new();
                 let out_fmt = if ext == "png" { ImageFormat::Png } else { ImageFormat::Jpeg };
                 let mime    = if ext == "png" { "image/png" }      else { "image/jpeg" };
@@ -119,7 +127,53 @@ fn encode_as_dataurl(data: &[u8], ext: &str) -> String {
     format!("data:{};base64,{}", mime_for_ext(ext), b64)
 }
 
-/// Bug-fix 2: recursively walk a directory collecting image paths.
+/// Get file modification time (returns UNIX_EPOCH on error).
+fn get_mtime(path: &str) -> SystemTime {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+/// Check if a cache entry is still valid (mtime unchanged).
+fn cache_entry_valid(entry: &CacheEntry, path: &str) -> bool {
+    get_mtime(path) == entry.mtime
+}
+
+/// Core file-read logic shared by the single and batch commands.
+/// Checks the cache first (invalidates on mtime change), reads+resizes on miss.
+fn read_single_file(file_path: &str, cache: &RwLock<HashMap<String, CacheEntry>>, max_dim: u32) -> FileResult {
+    // Improvement 4: check cache, invalidate if file changed on disk.
+    {
+        let c = cache.read().unwrap();
+        if let Some(entry) = c.get(file_path) {
+            if cache_entry_valid(entry, file_path) {
+                return FileResult { ok: true, data_url: Some(entry.data_url.clone()), error: None };
+            }
+            // mtime changed → fall through to re-read
+        }
+    }
+
+    let ext = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("jpg")
+        .to_lowercase();
+
+    match std::fs::read(file_path) {
+        Ok(data) => {
+            let data_url = encode_as_dataurl(&data, &ext, max_dim);
+            let mtime = get_mtime(file_path);
+            cache.write().unwrap().insert(
+                file_path.to_string(),
+                CacheEntry { data_url: data_url.clone(), mtime },
+            );
+            FileResult { ok: true, data_url: Some(data_url), error: None }
+        }
+        Err(e) => FileResult { ok: false, data_url: None, error: Some(e.to_string()) },
+    }
+}
+
+/// Improvement 2: recursively walk a directory collecting image paths.
 fn collect_images_recursive(dir: &std::path::Path, out: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return; };
     for entry in entries.filter_map(|e| e.ok()) {
@@ -175,33 +229,28 @@ async fn check_for_updates(app: tauri::AppHandle) -> Option<UpdateInfo> {
 
 // ── File commands ─────────────────────────────────────────────────────────────
 
-/// Read a local file and return it as a base64 data URL.
-/// Results are cached in memory — repeated reads of the same path are instant.
+/// Read a single file as a base64 data URL (cached + mtime-invalidated).
 #[tauri::command]
 fn read_file_as_dataurl(file_path: String, state: tauri::State<AppState>) -> FileResult {
-    // Bug-fix 3: return cached result if available (avoids repeated disk reads on
-    // session restore or filmstrip navigation with the same photos).
-    {
-        let cache = state.file_cache.lock().unwrap();
-        if let Some(cached) = cache.get(&file_path) {
-            return FileResult { ok: true, data_url: Some(cached.clone()), error: None };
-        }
-    }
+    read_single_file(&file_path, &state.file_cache, MAX_DIM)
+}
 
-    let ext = std::path::Path::new(&file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("jpg")
-        .to_lowercase();
+/// Improvement 1 (thumbnails): read a file resized to `max_dim` px (default 200).
+/// Cached separately from full-res. Useful for filmstrip or session-restore previews.
+#[tauri::command]
+fn read_as_thumbnail(file_path: String, max_dim: Option<u32>, state: tauri::State<AppState>) -> FileResult {
+    let dim = max_dim.unwrap_or(200).clamp(32, 600);
+    read_single_file(&file_path, &state.thumb_cache, dim)
+}
 
-    match std::fs::read(&file_path) {
-        Ok(data) => {
-            let data_url = encode_as_dataurl(&data, &ext);
-            state.file_cache.lock().unwrap().insert(file_path, data_url.clone());
-            FileResult { ok: true, data_url: Some(data_url), error: None }
-        }
-        Err(e) => FileResult { ok: false, data_url: None, error: Some(e.to_string()) },
-    }
+/// Improvement 3 (parallel): read a batch of files in parallel using rayon.
+/// Dramatically faster than calling read_file_as_dataurl N times sequentially.
+#[tauri::command]
+fn read_files_batch(file_paths: Vec<String>, state: tauri::State<AppState>) -> Vec<FileResult> {
+    let cache = state.inner();
+    file_paths.par_iter()
+        .map(|path| read_single_file(path, &cache.file_cache, MAX_DIM))
+        .collect()
 }
 
 // ── Dialog commands ───────────────────────────────────────────────────────────
@@ -240,7 +289,6 @@ fn pick_photos_from_folder(app: tauri::AppHandle) -> Vec<String> {
         .and_then(|fp| fp.into_path().ok());
 
     let Some(dir_path) = dir else { return vec![]; };
-
     let mut results = Vec::new();
     collect_images_recursive(&dir_path, &mut results);
     results.sort(); // consistent alphabetical order
@@ -258,22 +306,61 @@ fn pick_data_file(app: tauri::AppHandle) -> Option<String> {
         .and_then(path_to_string)
 }
 
+/// Improvement (PDF nativo): show a native "Save As" dialog and return the chosen path.
+/// `extension` must be without dot, e.g. "pdf", "zip", "png".
+#[tauri::command]
+fn pick_save_path(
+    default_name: String,
+    filter_name: String,
+    extension: String,
+    app: tauri::AppHandle,
+) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    app.dialog().file()
+        .add_filter(&filter_name, &[extension.as_str()])
+        .set_file_name(&default_name)
+        .blocking_save_file()
+        .and_then(|fp| fp.into_path().ok())
+        .and_then(path_to_string)
+}
+
+/// Improvement (PDF nativo): write base64-encoded data (or a data-URI) to a file on disk.
+#[tauri::command]
+fn save_base64_to_file(path: String, base64_data: String) -> Result<(), String> {
+    // Strip data-URI prefix if present: "data:<mime>;base64,XXXXX"
+    let b64 = match base64_data.find(',') {
+        Some(pos) => &base64_data[pos + 1..],
+        None      => &base64_data,
+    };
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&path, &data).map_err(|e| e.to_string())
+}
+
 // ── App entry ─────────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(AppState { file_cache: Mutex::new(HashMap::new()) })
+        .manage(AppState {
+            file_cache:  RwLock::new(HashMap::new()),
+            thumb_cache: RwLock::new(HashMap::new()),
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             reniec_query,
             read_file_as_dataurl,
+            read_as_thumbnail,
+            read_files_batch,
             check_for_updates,
             pick_template_file,
             pick_photo_files,
             pick_photos_from_folder,
             pick_data_file,
+            pick_save_path,
+            save_base64_to_file,
         ])
         .run(tauri::generate_context!())
         .expect("error al iniciar FotoCarnet");
