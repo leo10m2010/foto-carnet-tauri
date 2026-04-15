@@ -1,0 +1,60 @@
+name: Release Tauri
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build & publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'FotoCarnet Tauri ${{ github.ref_name }}'
+          releaseBody: |
+            ## FotoCarnet (versión Tauri) — ${{ github.ref_name }}
+
+            Instalador para Windows (~8 MB, sin necesitar instalar nada más).
+
+            **Descarga el archivo `.exe` (NSIS) o `.msi` según prefieras.**
+
+            ---
+            Versión Tauri: más ligera y rápida que la versión Electron.
+          releaseDraft: false
+          prerelease: false
