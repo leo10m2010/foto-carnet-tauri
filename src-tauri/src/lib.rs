@@ -194,7 +194,7 @@ fn collect_images_recursive(dir: &std::path::Path, out: &mut Vec<String>) {
 #[tauri::command]
 async fn reniec_query(dni: String, token: String) -> ReniecResult {
     let url = format!(
-        "https://dniruc.apisperu.com/api/v1/dni/{}&token={}",
+        "https://dniruc.apisperu.com/api/v1/dni/{}?token={}",
         dni.trim(),
         token.trim()
     );

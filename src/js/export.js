@@ -356,6 +356,7 @@ async function exportPNG() {
 
         const pngFilename = `carnet_${sanitizeFileComponent(dniValue)}_${dpi}dpi.png`;
         const pngSaved = await downloadBlob(pngBlob, pngFilename);
+        if (pngSaved === false && window.electronAPI?.pickSavePath) return; // cancelled native dialog
         showToast(pngSaved ? `PNG guardado: ${String(pngSaved).split(/[\\/]/).pop()}` : 'PNG descargado en alta calidad', 'success');
     } catch (err) {
         if (isJobCancelledError(err)) {
@@ -428,6 +429,7 @@ async function exportAllZIP() {
         assertJobNotCancelled();
         const fileName = `carnets_${widthCM.toFixed(1)}x${heightCM.toFixed(1)}cm_${dpi}dpi.zip`.replace(/\s/g, '');
         const zipSaved = await downloadBlob(zipBlob, fileName);
+        if (zipSaved === false && window.electronAPI?.pickSavePath) return; // cancelled native dialog
         showToast(
             zipSaved
                 ? `ZIP guardado: ${state.records.length} carnets en ${String(zipSaved).split(/[\\/]/).pop()}`
@@ -571,6 +573,7 @@ async function exportPDF() {
         const pdfFilename = `carnets_${pageSize.toUpperCase()}_${exportDPI}dpi.pdf`;
         const pdfBlob = new Blob([pdf.output('arraybuffer')], { type: 'application/pdf' });
         const pdfSaved = await downloadBlob(pdfBlob, pdfFilename);
+        if (pdfSaved === false && window.electronAPI?.pickSavePath) return; // cancelled native dialog
         showToast(
             pdfSaved
                 ? `PDF guardado: ${String(pdfSaved).split(/[\\/]/).pop()} (${state.records.length} carnets @ ${exportDPI} DPI)`

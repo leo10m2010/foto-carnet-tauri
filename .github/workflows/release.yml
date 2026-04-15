@@ -1,4 +1,4 @@
-name: Release Tauri
+name: Release Tauri Portable
 
 on:
   push:
@@ -28,33 +28,42 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             src-tauri/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install npm dependencies
         run: npm install
 
-      - name: Build & publish release
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Tauri (sin instalador — solo exe portable)
+        shell: pwsh
+        run: npx tauri build --config '{"bundle":{"active":false}}'
+
+      - name: Rename portable exe
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          cp "src-tauri/target/release/foto-carnet-tauri.exe" \
+             "FotoCarnet-Tauri-${TAG}-Portable.exe"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'FotoCarnet Tauri ${{ github.ref_name }}'
-          releaseBody: |
-            ## FotoCarnet (versión Tauri) — ${{ github.ref_name }}
+          name: FotoCarnet Tauri ${{ github.ref_name }}
+          body: |
+            ## FotoCarnet Tauri ${{ github.ref_name }}
 
-            Instalador para Windows (~8 MB, sin necesitar instalar nada más).
+            Versión Tauri — más ligera y rápida que la versión Electron (~8 MB vs ~120 MB).
 
-            **Descarga el archivo `.exe` (NSIS) o `.msi` según prefieras.**
+            ### Uso
+            Descarga el `.exe` y ejecútalo directamente — **no requiere instalación**.
 
-            ---
-            Versión Tauri: más ligera y rápida que la versión Electron.
-          releaseDraft: false
+            > **Requisito:** Windows 10/11 con WebView2 instalado (ya incluido en Windows 11 y en Windows 10 con Edge actualizado).
+
+            > Si Windows muestra advertencia de seguridad, haz clic en **"Más información" → "Ejecutar de todas formas"**
+          files: FotoCarnet-Tauri-*-Portable.exe
+          draft: false
           prerelease: false
