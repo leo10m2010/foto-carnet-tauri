@@ -1,7 +1,17 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Mutex;
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── App state ─────────────────────────────────────────────────────────────────
+
+/// Shared state across Tauri commands.
+struct AppState {
+    /// Bug-fix 3: cache path → data URL to avoid re-reading disk on session restore.
+    file_cache: Mutex<HashMap<String, String>>,
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize)]
 struct ReniecResult {
@@ -24,7 +34,7 @@ struct UpdateInfo {
     url: String,
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn is_newer(a: &str, b: &str) -> bool {
     let parse = |v: &str| -> Vec<u32> {
@@ -54,11 +64,74 @@ fn path_to_string(p: std::path::PathBuf) -> Option<String> {
 
 const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "bmp", "webp", "gif"];
 
+/// Max dimension (px) for either side of a photo sent to the renderer.
+/// Enough for any carnet print quality; prevents sending 4K+ images over IPC.
+const MAX_DIM: u32 = 1600;
+
 fn is_image_path(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| IMAGE_EXTS.contains(&e.to_lowercase().as_str()))
         .unwrap_or(false)
+}
+
+fn mime_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "png"  => "image/png",
+        "gif"  => "image/gif",
+        "bmp"  => "image/bmp",
+        "webp" => "image/webp",
+        _      => "image/jpeg",
+    }
+}
+
+/// Bug-fix 1: resize oversized images in Rust before base64-encoding them.
+/// Avoids sending multi-MB strings over IPC for every photo.
+fn encode_as_dataurl(data: &[u8], ext: &str) -> String {
+    use image::ImageFormat;
+
+    let fmt = match ext {
+        "png"        => Some(ImageFormat::Png),
+        "gif"        => Some(ImageFormat::Gif),
+        "bmp"        => Some(ImageFormat::Bmp),
+        "webp"       => Some(ImageFormat::WebP),
+        "jpg"|"jpeg" => Some(ImageFormat::Jpeg),
+        _            => None,
+    };
+
+    if let Some(fmt) = fmt {
+        if let Ok(img) = image::load_from_memory_with_format(data, fmt) {
+            if img.width() > MAX_DIM || img.height() > MAX_DIM {
+                let resized = img.resize(MAX_DIM, MAX_DIM, image::imageops::FilterType::CatmullRom);
+                let mut buf: Vec<u8> = Vec::new();
+                let out_fmt = if ext == "png" { ImageFormat::Png } else { ImageFormat::Jpeg };
+                let mime    = if ext == "png" { "image/png" }      else { "image/jpeg" };
+                if resized.write_to(&mut std::io::Cursor::new(&mut buf), out_fmt).is_ok() && !buf.is_empty() {
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+                    return format!("data:{};base64,{}", mime, b64);
+                }
+            }
+        }
+    }
+
+    // No resize needed (or decode failed) — encode original bytes as-is.
+    let b64 = base64::engine::general_purpose::STANDARD.encode(data);
+    format!("data:{};base64,{}", mime_for_ext(ext), b64)
+}
+
+/// Bug-fix 2: recursively walk a directory collecting image paths.
+fn collect_images_recursive(dir: &std::path::Path, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_images_recursive(&path, out);
+        } else if is_image_path(&path) {
+            if let Some(s) = path_to_string(path) {
+                out.push(s);
+            }
+        }
+    }
 }
 
 // ── HTTP commands ─────────────────────────────────────────────────────────────
@@ -100,28 +173,38 @@ async fn check_for_updates(app: tauri::AppHandle) -> Option<UpdateInfo> {
     if is_newer(&latest, &current) { Some(UpdateInfo { version: latest, url }) } else { None }
 }
 
-// ── File commands ──────────────────────────────────────────────────────────────
+// ── File commands ─────────────────────────────────────────────────────────────
 
 /// Read a local file and return it as a base64 data URL.
+/// Results are cached in memory — repeated reads of the same path are instant.
 #[tauri::command]
-fn read_file_as_dataurl(file_path: String) -> FileResult {
+fn read_file_as_dataurl(file_path: String, state: tauri::State<AppState>) -> FileResult {
+    // Bug-fix 3: return cached result if available (avoids repeated disk reads on
+    // session restore or filmstrip navigation with the same photos).
+    {
+        let cache = state.file_cache.lock().unwrap();
+        if let Some(cached) = cache.get(&file_path) {
+            return FileResult { ok: true, data_url: Some(cached.clone()), error: None };
+        }
+    }
+
+    let ext = std::path::Path::new(&file_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("jpg")
+        .to_lowercase();
+
     match std::fs::read(&file_path) {
         Ok(data) => {
-            let ext = std::path::Path::new(&file_path)
-                .extension().and_then(|e| e.to_str()).unwrap_or("jpg").to_lowercase();
-            let mime = match ext.as_str() {
-                "png" => "image/png", "gif" => "image/gif",
-                "bmp" => "image/bmp", "webp" => "image/webp",
-                _     => "image/jpeg",
-            };
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
-            FileResult { ok: true, data_url: Some(format!("data:{};base64,{}", mime, b64)), error: None }
+            let data_url = encode_as_dataurl(&data, &ext);
+            state.file_cache.lock().unwrap().insert(file_path, data_url.clone());
+            FileResult { ok: true, data_url: Some(data_url), error: None }
         }
         Err(e) => FileResult { ok: false, data_url: None, error: Some(e.to_string()) },
     }
 }
 
-// ── Dialog commands ────────────────────────────────────────────────────────────
+// ── Dialog commands ───────────────────────────────────────────────────────────
 
 /// Open a native file picker for the template (single image).
 #[tauri::command]
@@ -148,7 +231,7 @@ fn pick_photo_files(app: tauri::AppHandle) -> Vec<String> {
         .collect()
 }
 
-/// Open a native folder picker, then list all image files inside.
+/// Open a native folder picker, then recursively list all image files inside.
 #[tauri::command]
 fn pick_photos_from_folder(app: tauri::AppHandle) -> Vec<String> {
     use tauri_plugin_dialog::DialogExt;
@@ -158,14 +241,10 @@ fn pick_photos_from_folder(app: tauri::AppHandle) -> Vec<String> {
 
     let Some(dir_path) = dir else { return vec![]; };
 
-    match std::fs::read_dir(&dir_path) {
-        Ok(entries) => entries
-            .filter_map(|e| e.ok())
-            .filter(|e| is_image_path(&e.path()))
-            .filter_map(|e| path_to_string(e.path()))
-            .collect(),
-        Err(_) => vec![],
-    }
+    let mut results = Vec::new();
+    collect_images_recursive(&dir_path, &mut results);
+    results.sort(); // consistent alphabetical order
+    results
 }
 
 /// Open a native file picker for a CSV/Excel data file.
@@ -184,6 +263,7 @@ fn pick_data_file(app: tauri::AppHandle) -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AppState { file_cache: Mutex::new(HashMap::new()) })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
