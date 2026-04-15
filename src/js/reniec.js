@@ -1,8 +1,39 @@
-// Token RENIEC: se lee desde el input de la UI (guardado en localStorage).
-// El usuario puede actualizarlo en la sección de datos sin tocar el código.
 function getReniecToken() {
     return localStorage.getItem('reniec-token') ||
         document.getElementById('field-reniec-token')?.value?.trim() || '';
+}
+
+function updateReniecTokenStatus() {
+    const token = localStorage.getItem('reniec-token') || '';
+    const statusEl = document.getElementById('reniec-token-status');
+    const badgeEl  = document.getElementById('badge-reniec');
+    if (statusEl) {
+        statusEl.textContent = token ? '✓ Configurado' : '';
+    }
+    if (badgeEl) {
+        badgeEl.style.borderColor = token ? '#34d399' : '';
+        badgeEl.style.color       = token ? '#34d399' : '';
+    }
+}
+
+function toggleReniecTokenVisibility() {
+    const input = document.getElementById('field-reniec-token');
+    if (!input) return;
+    const hide = input.type === 'text';
+    input.type = hide ? 'password' : 'text';
+    const icon = document.getElementById('icon-toggle-token');
+    if (icon) {
+        icon.setAttribute('data-lucide', hide ? 'eye' : 'eye-off');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    }
+}
+
+function clearReniecToken() {
+    localStorage.removeItem('reniec-token');
+    const input = document.getElementById('field-reniec-token');
+    if (input) input.value = '';
+    updateReniecTokenStatus();
+    showToast('Token RENIEC eliminado', 'info');
 }
 
 async function enrichWithRENIEC() {
