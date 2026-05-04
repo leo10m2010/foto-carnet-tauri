@@ -114,7 +114,8 @@ function refreshExportStatsDisplay() {
     if (s.zip)   parts.push(`${s.zip} ZIP`);
     if (s.png)   parts.push(`${s.png} PNG`);
     if (s.print) parts.push(`${s.print} impr.`);
-    el.textContent = `📊 ${parts.join(' · ')}`;
+    el.innerHTML = iconTextHtml('bar-chart-3', parts.join(' · '), 'status-export-icon');
+    refreshLucideIcons();
 }
 
 // ===================== FONT PREVIEW =====================
@@ -156,10 +157,11 @@ function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
-    const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
-    toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span> ${escapeHtml(message)}`;
+    const icons = { success: 'check-circle-2', error: 'x-circle', info: 'info', warning: 'triangle-alert' };
+    toast.innerHTML = `${iconHtml(icons[type] || 'info', 'toast-icon')}<span class="toast-message">${escapeHtml(message)}</span>`;
     toast.addEventListener('click', () => dismissToast(toast));
     container.appendChild(toast);
+    refreshLucideIcons();
 
     const duration = type === 'error' ? Math.max(4000, message.length * 55) : 3000;
     setTimeout(() => dismissToast(toast), duration);

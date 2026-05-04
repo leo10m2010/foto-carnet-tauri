@@ -23,15 +23,18 @@ function renderPreflightReport(report) {
         return;
     }
 
+    const preflightItem = (iconName, content) =>
+        `<span class="pf-list-row">${iconHtml(iconName, 'pf-list-icon')}<span>${content}</span></span>`;
+
     const duplicateList = report.duplicates.slice(0, 8)
-        .map(d => `• DNI ${escapeHtml(d.key)} (${d.count} veces)`)
-        .join('<br>');
+        .map(d => preflightItem('copy', `DNI ${escapeHtml(d.key)} (${d.count} veces)`))
+        .join('');
     const missingList = report.missingPhotos.slice(0, 8)
-        .map(d => `• ${escapeHtml(d.dni || 'SIN_DNI')} - ${escapeHtml(d.name || 'Registro sin nombre')}`)
-        .join('<br>');
+        .map(d => preflightItem('image-off', `${escapeHtml(d.dni || 'SIN_DNI')} - ${escapeHtml(d.name || 'Registro sin nombre')}`))
+        .join('');
     const lowQualityList = report.lowQuality.slice(0, 8)
-        .map(d => `• ${escapeHtml(d.dni || 'SIN_DNI')} (${d.width}×${d.height}px, x${d.factor.toFixed(2)} de escalado)`)
-        .join('<br>');
+        .map(d => preflightItem('triangle-alert', `${escapeHtml(d.dni || 'SIN_DNI')} (${d.width}×${d.height}px, x${d.factor.toFixed(2)} de escalado)`))
+        .join('');
 
     box.innerHTML = `
         <div class="pf-summary ${report.ok ? 'pf-ok' : 'pf-error'}">
@@ -48,6 +51,7 @@ function renderPreflightReport(report) {
         ${lowQualityList ? `<div class="pf-list"><strong class="pf-warn">Fotos con posible pixelado en el DPI actual</strong><br>${lowQualityList}</div>` : ''}
     `;
     box.style.display = 'block';
+    refreshLucideIcons();
 }
 
 async function runPreflightCheck(options = {}) {

@@ -42,8 +42,8 @@ function handleDataUpload(e) {
             document.getElementById('column-mapping').style.display = 'block';
 
             document.getElementById('zone-data').classList.add('has-file');
-            document.getElementById('data-file-name').textContent = `✅ ${file.name} (${data.length} registros)`;
-            document.getElementById('badge-data').textContent = '✓';
+            setFileStatus('data-file-name', 'check-circle-2', `${file.name} (${data.length} registros)`);
+            setStepBadgeCompleted('badge-data');
 
             // Warn if the auto-detected DNI column doesn't look like DNIs.
             const dniRatio = dniCol ? dniLikeRatio(data, dniCol) : 0;
@@ -211,11 +211,11 @@ function showDataPreview() {
     const thead = document.querySelector('#data-table thead');
     const tbody = document.querySelector('#data-table tbody');
 
-    thead.innerHTML = '<tr><th>DNI</th><th>Nombres</th><th>Apellidos</th><th>Extra</th><th>Foto</th><th title="Verificado en RENIEC">✓</th></tr>';
+    thead.innerHTML = `<tr><th>DNI</th><th>Nombres</th><th>Apellidos</th><th>Extra</th><th>Foto</th><th title="Verificado en RENIEC">${iconHtml('shield-check', 'table-status-icon')}</th></tr>`;
 
     const preview = state.records.slice(0, 50);
     tbody.innerHTML = preview.map(r => {
-        let verif = '<td class="reniec-pending">…</td>';
+        let verif = `<td class="reniec-pending">${iconHtml('minus', 'table-status-icon')}</td>`;
         let rowClass = '';
         let nombresClass = '';
         let apellidosClass = '';
@@ -229,14 +229,14 @@ function showDataPreview() {
             const tip = matched
                 ? 'Nombre del archivo coincide con RENIEC'
                 : `Archivo: ${r.filenameApellidos || ''} ${r.filenameNombres || ''} → corregido con RENIEC`;
-            verif = `<td class="reniec-ok" title="${escapeHtmlAttr(tip)}">${matched ? '✓' : '✓*'}</td>`;
+            verif = `<td class="reniec-ok" title="${escapeHtmlAttr(tip)}">${iconHtml(matched ? 'check' : 'badge-check', 'table-status-icon')}</td>`;
             if (!matched) {
                 rowClass = 'reniec-corrected';
                 if (fnNom && fnNom !== rnNom) nombresClass = 'reniec-fixed-cell';
                 if (fnAp  && fnAp  !== rnAp)  apellidosClass = 'reniec-fixed-cell';
             }
         } else if (r.reniecOk === false) {
-            verif = '<td class="reniec-err" title="No encontrado en RENIEC">✗</td>';
+            verif = `<td class="reniec-err" title="No encontrado en RENIEC">${iconHtml('x', 'table-status-icon')}</td>`;
         }
 
         return `<tr${rowClass ? ` class="${rowClass}"` : ''}>
@@ -244,10 +244,11 @@ function showDataPreview() {
             <td${nombresClass ? ` class="${nombresClass}" title="Corregido por RENIEC (original: ${escapeHtmlAttr(r.filenameNombres || '')})"` : ''}>${escapeHtml(r.nombres)}</td>
             <td${apellidosClass ? ` class="${apellidosClass}" title="Corregido por RENIEC (original: ${escapeHtmlAttr(r.filenameApellidos || '')})"` : ''}>${escapeHtml(r.apellidos)}</td>
             <td>${escapeHtml(r.extra || '—')}</td>
-            <td>${r.hasPhoto ? '✅' : '❌'}</td>
+            <td>${iconHtml(r.hasPhoto ? 'check' : 'x', `table-status-icon ${r.hasPhoto ? 'table-status-ok' : 'table-status-error'}`, r.hasPhoto ? 'Con foto' : 'Sin foto')}</td>
             ${verif}
         </tr>`;
     }).join('');
+    refreshLucideIcons();
 
     document.getElementById('stat-records').textContent = state.records.length;
     document.getElementById('stat-photos').textContent = state.records.filter(r => r.hasPhoto).length + '/' + state.records.length;

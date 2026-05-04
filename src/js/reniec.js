@@ -76,7 +76,7 @@ function updateReniecTokenStatus() {
     const statusEl = document.getElementById('reniec-token-status');
     const badgeEl  = document.getElementById('badge-reniec');
     if (statusEl) {
-        statusEl.textContent = token ? '✓ Configurado' : '';
+        statusEl.innerHTML = token ? iconTextHtml('check', 'Configurado', 'section-status-icon') : '';
     }
     if (badgeEl) {
         badgeEl.style.borderColor = token ? '#34d399' : '';
@@ -92,7 +92,7 @@ function toggleReniecTokenVisibility() {
     const icon = document.getElementById('icon-toggle-token');
     if (icon) {
         icon.setAttribute('data-lucide', hide ? 'eye' : 'eye-off');
-        if (typeof lucide !== 'undefined') lucide.createIcons();
+        refreshLucideIcons();
     }
 }
 
@@ -114,12 +114,14 @@ async function testReniecToken() {
     const token  = getReniecToken();
 
     if (!token) {
-        if (result) result.innerHTML = '<span style="color:#f87171;">Pega tu token primero.</span>';
+        if (result) result.innerHTML = `<span class="inline-result-row inline-result-error">${iconHtml('x-circle', 'inline-result-icon')}<span>Pega tu token primero.</span></span>`;
+        refreshLucideIcons();
         return;
     }
 
-    if (btn) { btn.disabled = true; btn.textContent = 'Probando…'; }
-    if (result) result.innerHTML = '<span style="color:var(--text-muted);">Consultando RENIEC…</span>';
+    if (btn) { btn.disabled = true; btn.textContent = 'Probando...'; }
+    if (result) result.innerHTML = `<span class="inline-result-row">${iconHtml('loader-circle', 'inline-result-icon inline-result-spin')}<span>Consultando RENIEC...</span></span>`;
+    refreshLucideIcons();
 
     try {
         let json, httpStatus = 0, ok = false;
@@ -140,19 +142,20 @@ async function testReniecToken() {
         // that still proves the token works.
         const tokenWorks = (json && json.success !== false) || (json && json.message && !/token/i.test(json.message));
         if (tokenWorks) {
-            if (result) result.innerHTML = '<span style="color:#34d399;font-weight:600;">✓ Token válido — RENIEC responde correctamente.</span>';
+            if (result) result.innerHTML = `<span class="inline-result-row inline-result-success">${iconHtml('check-circle-2', 'inline-result-icon')}<span>Token válido — RENIEC responde correctamente.</span></span>`;
             showToast('Token RENIEC verificado', 'success');
         } else {
             const msg = json?.message || 'Respuesta inesperada';
             if (/token/i.test(msg)) throw new Error(msg);
-            if (result) result.innerHTML = `<span style="color:#34d399;font-weight:600;">✓ Token válido</span> <span style="color:var(--text-muted);">(respuesta: ${escapeHtml(msg)})</span>`;
+            if (result) result.innerHTML = `<span class="inline-result-row inline-result-success">${iconHtml('check-circle-2', 'inline-result-icon')}<span>Token válido <span class="inline-result-muted">(respuesta: ${escapeHtml(msg)})</span></span></span>`;
         }
     } catch (err) {
         const msg = err?.message || 'Error al probar el token';
-        if (result) result.innerHTML = `<span style="color:#f87171;font-weight:600;">✗ ${escapeHtml(msg)}</span>`;
+        if (result) result.innerHTML = `<span class="inline-result-row inline-result-error">${iconHtml('x-circle', 'inline-result-icon')}<span>${escapeHtml(msg)}</span></span>`;
         showToast(`Token RENIEC: ${msg}`, 'error');
     } finally {
         if (btn) { btn.disabled = false; btn.textContent = 'Probar'; }
+        refreshLucideIcons();
     }
 }
 

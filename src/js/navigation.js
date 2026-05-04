@@ -92,6 +92,12 @@ function clearAll() {
     const zoneData = document.getElementById('zone-data');
     if (zoneData) zoneData.classList.remove('has-file');
     document.getElementById('data-file-name').textContent = '';
+    const badgeData = document.getElementById('badge-data');
+    if (badgeData) {
+        badgeData.classList.remove('completed');
+        badgeData.innerHTML = iconHtml('settings');
+        refreshLucideIcons();
+    }
 
     // Hide data preview, RENIEC chip and column mapping
     document.getElementById('data-preview').style.display = 'none';

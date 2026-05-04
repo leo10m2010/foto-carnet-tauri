@@ -70,9 +70,9 @@ function handleTemplateUpload(e) {
             state.templatePath = window.electronAPI?.getPathForFile(file) || file.path || null;
 
             document.getElementById('zone-template').classList.add('has-file');
-            document.getElementById('template-file-name').textContent = `✅ ${file.name} (${img.width}×${img.height})`;
+            setFileStatus('template-file-name', 'check-circle-2', `${file.name} (${img.width}×${img.height})`);
             document.getElementById('badge-template').classList.add('completed');
-            document.getElementById('badge-template').textContent = '✓';
+            setStepBadgeCompleted('badge-template');
 
             document.getElementById('status-template').textContent = `Plantilla: ${file.name}`;
             document.getElementById('status-dimensions').textContent = `${img.width}×${img.height}px`;
@@ -225,9 +225,9 @@ function handlePhotosUpload(e) {
     }
 
     document.getElementById('zone-photos').classList.add('has-file');
-    document.getElementById('photos-file-name').textContent = `✅ ${imageFiles.length} fotos cargadas (datos extraídos)`;
+    setFileStatus('photos-file-name', 'check-circle-2', `${imageFiles.length} fotos cargadas (datos extraídos)`);
     document.getElementById('badge-photos').classList.add('completed');
-    document.getElementById('badge-photos').textContent = '✓';
+    setStepBadgeCompleted('badge-photos');
 
     showDataPreview();
     document.getElementById('data-preview').style.display = 'block';

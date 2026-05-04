@@ -152,3 +152,44 @@ function escapeHtmlAttr(text) {
         .replace(/'/g, '&#39;');
 }
 
+function refreshLucideIcons() {
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function iconHtml(name, className = '', label = '') {
+    const aria = label
+        ? `aria-label="${escapeHtmlAttr(label)}"`
+        : 'aria-hidden="true"';
+    return `<i data-lucide="${escapeHtmlAttr(name)}"${className ? ` class="${escapeHtmlAttr(className)}"` : ''} ${aria}></i>`;
+}
+
+function iconTextHtml(name, text, className = '') {
+    return `${iconHtml(name, className)}<span>${escapeHtml(text)}</span>`;
+}
+
+function setFileStatus(elementId, iconName, text, tone = 'success') {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.classList.add('file-name-with-icon');
+    el.dataset.tone = tone;
+    el.innerHTML = iconTextHtml(iconName, text, 'file-status-icon');
+    refreshLucideIcons();
+}
+
+function setStepBadgeCompleted(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.classList.add('completed');
+    el.style.background = '';
+    el.style.border = '';
+    el.style.fontSize = '';
+    el.innerHTML = iconHtml('check', 'badge-status-icon', 'Completado');
+    refreshLucideIcons();
+}
+
+function setIconButtonContent(buttonOrId, iconName, text = '') {
+    const btn = typeof buttonOrId === 'string' ? document.getElementById(buttonOrId) : buttonOrId;
+    if (!btn) return;
+    btn.innerHTML = `${iconHtml(iconName)}${text ? `<span>${escapeHtml(text)}</span>` : ''}`;
+    refreshLucideIcons();
+}

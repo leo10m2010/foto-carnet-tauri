@@ -51,7 +51,10 @@ function applyFilmstripVisibility(animate) {
     if (!animate) bar.classList.add('no-transition');
     bar.classList.toggle('is-open', !!state.filmstripVisible);
     const arrow = document.getElementById('filmstrip-arrow');
-    if (arrow) arrow.textContent = state.filmstripVisible ? '▼' : '▲';
+    if (arrow) {
+        arrow.innerHTML = iconHtml(state.filmstripVisible ? 'chevron-down' : 'chevron-up');
+        refreshLucideIcons();
+    }
     if (!animate) {
         bar.offsetHeight; // force reflow before re-enabling transitions
         bar.classList.remove('no-transition');

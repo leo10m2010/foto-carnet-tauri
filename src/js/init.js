@@ -1,7 +1,7 @@
 // ===================== INIT =====================
 
 document.addEventListener('DOMContentLoaded', async () => {
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+    refreshLucideIcons();
 
     setupFileHandlers();
     setupLivePreview();
@@ -45,7 +45,7 @@ function manualCheckForUpdates() {
         btn.disabled = false;
         btn.classList.remove('is-checking');
         btn.innerHTML = '<i data-lucide="refresh-cw"></i><span class="sr-only">Buscar actualizaciones</span>';
-        if (typeof lucide !== 'undefined') lucide.createIcons();
+        refreshLucideIcons();
     }
 
     if (btn) {
@@ -61,14 +61,14 @@ function manualCheckForUpdates() {
         // Tauri: Promise-based, resolves with true/false
         result.then(found => {
             resetBtn();
-            if (!found && !bannerAlreadyVisible) showToast('Ya tienes la última versión instalada ✓', 'success');
+            if (!found && !bannerAlreadyVisible) showToast('Ya tienes la última versión instalada', 'success');
         }).catch(resetBtn);
     } else {
         // Electron: fire-and-forget via IPC; check banner state after timeout
         setTimeout(() => {
             resetBtn();
             if (banner?.style.display === 'none' && !bannerAlreadyVisible) {
-                showToast('Ya tienes la última versión instalada ✓', 'success');
+                showToast('Ya tienes la última versión instalada', 'success');
             }
         }, 5000);
     }
@@ -85,7 +85,7 @@ function setupUpdateBanner() {
         link.dataset.updateUrl = url || '';
         link.setAttribute('href', url || '#');
         banner.style.display = 'flex';
-        if (typeof lucide !== 'undefined') lucide.createIcons();
+        refreshLucideIcons();
     });
 }
 

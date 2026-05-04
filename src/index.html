@@ -30,7 +30,7 @@
                     <div class="section-header" data-toggle-section="section-template">
                         <div class="step-badge" id="badge-template">1</div>
                         <h3>Plantilla de Fondo</h3>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
                     <div class="section-body">
                         <div class="upload-zone" id="zone-template" data-file-input="input-template">
@@ -47,7 +47,7 @@
                     <div class="section-header" data-toggle-section="section-photos">
                         <div class="step-badge" id="badge-photos">2</div>
                         <h3>Fotos y Datos</h3>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
                     <div class="section-body">
                         <div class="upload-zone" id="zone-photos" data-file-input="input-photos-files">
@@ -101,7 +101,7 @@
                             </div>
                             <div class="record-editor-actions">
                                 <button type="button" class="btn btn-primary record-editor-apply" data-record-editor-action="apply"><i data-lucide="check"></i>Aplicar</button>
-                                <button type="button" class="btn btn-secondary record-editor-reset" data-record-editor-action="cancel" title="Revertir cambios">↺</button>
+                                <button type="button" class="btn btn-secondary record-editor-reset" data-record-editor-action="cancel" title="Revertir cambios" aria-label="Revertir cambios"><i data-lucide="rotate-ccw"></i></button>
                             </div>
                         </div>
                     </div>
@@ -113,7 +113,7 @@
                         <div class="step-badge" id="badge-reniec"><i data-lucide="shield-check"></i></div>
                         <h3>RENIEC <small>— verificación automática de nombres</small></h3>
                         <span id="reniec-token-status" class="section-status"></span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
                     <div class="section-body">
                         <p class="section-help">Al cargar fotos con DNI de 8 dígitos, se consulta RENIEC automáticamente para corregir nombres y apellidos.</p>
@@ -143,9 +143,9 @@
                 <!-- STEP 2b: CSV/Excel (OPTIONAL) -->
                 <div class="config-section collapsed advanced-only" id="section-data">
                     <div class="section-header" data-toggle-section="section-data">
-                        <div class="step-badge" id="badge-data" style="background:var(--bg-card);border:1px solid var(--border-color);font-size:0.7rem;"><i data-lucide="settings" style="width:12px;height:12px;"></i></div>
+                        <div class="step-badge step-badge-muted" id="badge-data"><i data-lucide="settings"></i></div>
                         <h3>CSV / Excel <small style="font-weight:400;color:var(--text-muted);font-size:0.72rem">— opcional, datos extra</small></h3>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
                     <div class="section-body">
                         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px;">Si necesitas campos adicionales (cargo, área, etc.) puedes cargar un CSV/Excel. Se vinculará por DNI con las fotos.</p>
@@ -178,7 +178,7 @@
                     <div class="section-header" data-toggle-section="section-fields">
                         <div class="step-badge" id="badge-fields">3</div>
                         <h3>Posición de Campos <small style="font-weight:400;color:var(--text-muted);font-size:0.72rem">— arrastra en vista previa</small></h3>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
                     <div class="section-body">
                         <!-- Nombres (first names) -->
@@ -413,7 +413,7 @@
                     <div class="section-header" data-toggle-section="section-pdf">
                         <div class="step-badge" id="badge-pdf">4</div>
                         <h3>Opciones de Exportación</h3>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
                     <div class="section-body">
                         <div class="form-row">
@@ -496,7 +496,7 @@
                 <i data-lucide="arrow-up-circle" style="width:14px;height:14px;flex-shrink:0;"></i>
                 <span id="update-banner-text">Nueva versión disponible</span>
                 <a id="update-banner-link" href="#" class="update-banner-link">Descargar</a>
-                <button type="button" class="update-banner-close" data-update-banner-close title="Cerrar">✕</button>
+                <button type="button" class="update-banner-close" data-update-banner-close title="Cerrar" aria-label="Cerrar aviso"><i data-lucide="x"></i></button>
             </div>
 
             <!-- Toolbar -->
@@ -553,14 +553,14 @@
                         <button type="button" class="hud-collapse-btn" id="hud-collapse-btn" data-hud-control="collapse" title="Expandir / Colapsar controles">
                             <i data-lucide="chevron-up" id="hud-collapse-icon"></i>
                         </button>
-                        <button type="button" class="hud-close-btn" data-hud-control="close" title="Deseleccionar (Esc)">✕</button>
+                        <button type="button" class="hud-close-btn" data-hud-control="close" title="Deseleccionar (Esc)" aria-label="Deseleccionar"><i data-lucide="x"></i></button>
                     </div>
 
                     <!-- Crop mode: collapses HUD to minimal indicator -->
                     <div class="editor-hud-crop-overlay" id="editor-hud-crop-overlay">
                         <i data-lucide="move" class="hud-hero-icon"></i>
                         <span>Arrastra la foto para reencuadrar</span>
-                        <button type="button" data-hud-control="crop-done">✓ Listo</button>
+                        <button type="button" data-hud-control="crop-done"><i data-lucide="check"></i><span>Listo</span></button>
                     </div>
 
                     <!-- Position / align actions -->
@@ -584,7 +584,7 @@
                         <div class="editor-hud-individual-overlay" id="editor-hud-individual-overlay">
                             <i data-lucide="user-check" class="hud-hero-icon"></i>
                             <span>Solo este registro</span>
-                            <button type="button" data-hud-photo-action="individual-off">✕ Desactivar</button>
+                            <button type="button" data-hud-photo-action="individual-off"><i data-lucide="x"></i><span>Desactivar</span></button>
                         </div>
 
                         <!-- Individual toggle -->
@@ -592,7 +592,7 @@
                             <input type="checkbox" id="hud-photo-individual" data-hud-photo-input="individual" disabled>
                             <i data-lucide="user-check" class="hud-hero-icon"></i>
                             Ajuste individual
-                            <span class="hud-individual-badge">●</span>
+                            <span class="hud-individual-badge" aria-hidden="true"></span>
                         </label>
 
                         <!-- Fondo section -->
@@ -641,11 +641,11 @@
                             <!-- Rotation slider -->
                             <div class="hud-slider-row">
                                 <span class="hud-slider-label">Ángulo</span>
-                                <button type="button" id="hud-rotate-ccw" data-hud-photo-action="rotate-ccw" disabled title="−90° (Alt+[)" class="hud-slider-step-btn">↺</button>
+                                <button type="button" id="hud-rotate-ccw" data-hud-photo-action="rotate-ccw" disabled title="−90° (Alt+[)" class="hud-slider-step-btn" aria-label="Rotar 90 grados a la izquierda"><i data-lucide="rotate-ccw"></i></button>
                                 <input type="range" id="hud-photo-rotation" min="-180" max="180" step="1" value="0" data-hud-photo-input="rotation" disabled title="[ ] ±90° · { } ±1° · Alt+[ ] ±45°">
-                                <button type="button" id="hud-rotate-cw" data-hud-photo-action="rotate-cw" disabled title="+90° (Alt+])" class="hud-slider-step-btn">↻</button>
+                                <button type="button" id="hud-rotate-cw" data-hud-photo-action="rotate-cw" disabled title="+90° (Alt+])" class="hud-slider-step-btn" aria-label="Rotar 90 grados a la derecha"><i data-lucide="rotate-cw"></i></button>
                                 <strong id="hud-rotation-value" class="hud-slider-value hud-value-pill">0°</strong>
-                                <button type="button" id="hud-rotate-reset" data-hud-photo-action="rotate-reset" disabled title="Restablecer ángulo" class="hud-icon-btn hud-icon-btn--xs">✕</button>
+                                <button type="button" id="hud-rotate-reset" data-hud-photo-action="rotate-reset" disabled title="Restablecer ángulo" class="hud-icon-btn hud-icon-btn--xs" aria-label="Restablecer ángulo"><i data-lucide="refresh-cw"></i></button>
                             </div>
                         </div>
                     </div>
@@ -671,7 +671,7 @@
                     <i data-lucide="gallery-horizontal" style="width:13px;height:13px;vertical-align:-2px;margin-right:5px;flex-shrink:0;"></i>
                     <span>Tira de fotos</span>
                     <span class="filmstrip-count" id="filmstrip-count"></span>
-                    <span class="filmstrip-arrow" id="filmstrip-arrow">▲</span>
+                    <span class="filmstrip-arrow" id="filmstrip-arrow"><i data-lucide="chevron-up"></i></span>
                 </div>
                 <div class="filmstrip-container" id="filmstrip-container">
                     <div class="filmstrip-track" id="filmstrip-track"></div>
@@ -690,7 +690,7 @@
                     <span id="status-template">Plantilla: —</span>
                     <span id="status-dimensions">—</span>
                     <span id="status-export-stats" title="Exportaciones realizadas desde la instalación"></span>
-                    <span class="status-credit">Creado por Renato Espinoza | Oficina de Comunicación e Imagen Institucional <span class="status-heart">&#10084;</span></span>
+                    <span class="status-credit">Creado por Renato Espinoza | Oficina de Comunicación e Imagen Institucional <i data-lucide="heart" class="status-heart" aria-hidden="true"></i></span>
                 </div>
                 <button type="button" id="btn-check-updates" class="status-icon-btn" data-update-check title="Buscar actualizaciones" aria-label="Buscar actualizaciones"><i data-lucide="refresh-cw"></i><span class="sr-only">Buscar actualizaciones</span></button>
             </div>
@@ -714,7 +714,7 @@
     <!-- Help / Shortcuts Modal -->
     <div class="modal-overlay" id="modal-help" data-help-overlay>
         <div class="modal-content help-modal">
-            <button type="button" class="help-close" data-help-action="close" title="Cerrar (Esc)" aria-label="Cerrar">×</button>
+            <button type="button" class="help-close" data-help-action="close" title="Cerrar (Esc)" aria-label="Cerrar"><i data-lucide="x"></i></button>
             <h3><i data-lucide="keyboard" style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;"></i>Atajos de teclado</h3>
             <div class="help-grid">
                 <div class="help-col">

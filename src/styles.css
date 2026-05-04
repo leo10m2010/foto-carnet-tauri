@@ -236,6 +236,17 @@ body::after {
   background: var(--success);
 }
 
+.section-header .step-badge-muted {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  font-size: 0.7rem;
+}
+
+.section-header .step-badge.step-badge-muted.completed {
+  background: var(--success);
+  border-color: transparent;
+}
+
 .section-header h3 {
   font-size: 0.9rem;
   font-weight: 600;
@@ -576,10 +587,14 @@ td.reniec-fixed-cell {
   position: relative;
 }
 td.reniec-fixed-cell::after {
-  content: '✎';
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
   margin-left: 6px;
-  color: #facc15;
-  font-size: 0.72rem;
+  border-radius: 50%;
+  background: #facc15;
+  vertical-align: 2px;
   opacity: 0.85;
 }
 /* ---- end RENIEC ---- */
@@ -1784,6 +1799,20 @@ td.reniec-fixed-cell::after {
   font-size: 0.73rem;
   color: #cbd5e1;
   line-height: 1.4;
+}
+
+.preflight-report .pf-list-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.preflight-report .pf-list-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  margin-top: 2px;
 }
 
 .canvas-inline-editor {
@@ -3561,5 +3590,147 @@ textarea:focus-visible,
   border-radius: 4px;
   color: var(--text-primary);
   text-align: center;
+}
+
+/* Icon-based status polish */
+.toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-icon svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.file-name-with-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.file-name-with-icon span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-status-icon,
+.badge-status-icon,
+.table-status-icon,
+.section-status-icon,
+.status-export-icon,
+.inline-result-icon,
+.toast-icon,
+.watched-folder-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.badge-status-icon {
+  color: currentColor !important;
+}
+
+.table-status-icon {
+  display: inline-block;
+  vertical-align: -2px;
+}
+
+.table-status-ok,
+.reniec-ok .table-status-icon {
+  color: #34d399 !important;
+}
+
+.table-status-error,
+.reniec-err .table-status-icon {
+  color: #f87171 !important;
+}
+
+.reniec-pending .table-status-icon {
+  color: var(--text-muted) !important;
+}
+
+.section-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.inline-result-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.inline-result-success {
+  color: #34d399;
+  font-weight: 600;
+}
+
+.inline-result-error {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.inline-result-muted {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.inline-result-spin {
+  animation: spin 0.9s linear infinite;
+}
+
+.toast {
+  gap: 10px;
+}
+
+.toast-icon {
+  color: currentColor !important;
+}
+
+.toast-message {
+  min-width: 0;
+}
+
+.status-export-icon {
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+
+.status-heart {
+  width: 13px;
+  height: 13px;
+  margin-left: 3px;
+  vertical-align: -2px;
+}
+
+.watched-folder-icon {
+  color: #34d399 !important;
+  filter: drop-shadow(0 0 4px rgba(52, 211, 153, 0.55));
+}
+
+.hud-individual-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 7px;
+  height: 7px;
+}
+
+.hud-individual-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 }

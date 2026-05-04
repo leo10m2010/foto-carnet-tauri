@@ -94,19 +94,19 @@ function updateWatcherUI() {
     if (!btn) return;
 
     if (state.watchedFolderPath) {
-        btn.innerHTML = '<i data-lucide="eye-off"></i><span>Detener vigilancia</span>';
+        setIconButtonContent(btn, 'eye-off', 'Detener vigilancia');
         btn.classList.add('btn-watching');
         if (status) {
             const shortPath = _shortenPath(state.watchedFolderPath, 50);
             status.style.display = 'flex';
-            status.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 6px #34d399;"></span> <span title="${state.watchedFolderPath}">Vigilando: <strong>${shortPath}</strong></span>`;
+            status.innerHTML = `${iconHtml('radio', 'watched-folder-icon')}<span title="${escapeHtmlAttr(state.watchedFolderPath)}">Vigilando: <strong>${escapeHtml(shortPath)}</strong></span>`;
         }
     } else {
-        btn.innerHTML = '<i data-lucide="eye"></i><span>Vincular carpeta (auto-importar)</span>';
+        setIconButtonContent(btn, 'eye', 'Vincular carpeta (auto-importar)');
         btn.classList.remove('btn-watching');
         if (status) status.style.display = 'none';
     }
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+    refreshLucideIcons();
 }
 
 function _shortenPath(p, max) {
@@ -205,10 +205,10 @@ async function ingestNewPhotoPaths(paths, silent = false) {
         zonePhotos.classList.add('has-file');
         document.getElementById('badge-photos')?.classList.add('completed');
         const badge = document.getElementById('badge-photos');
-        if (badge) badge.textContent = '✓';
+        if (badge) setStepBadgeCompleted('badge-photos');
     }
     const fileNameEl = document.getElementById('photos-file-name');
-    if (fileNameEl) fileNameEl.textContent = `✅ ${state.photosCount} foto${state.photosCount !== 1 ? 's' : ''} cargadas`;
+    if (fileNameEl) setFileStatus('photos-file-name', 'check-circle-2', `${state.photosCount} foto${state.photosCount !== 1 ? 's' : ''} cargadas`);
 
     showDataPreview();
     document.getElementById('data-preview').style.display = 'block';

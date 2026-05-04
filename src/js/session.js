@@ -89,9 +89,8 @@ async function restoreSession() {
             populateCSVMapping(columns, autoDni, autoExtra);
             document.getElementById('column-mapping').style.display = 'block';
             document.getElementById('zone-data')?.classList.add('has-file');
-            document.getElementById('data-file-name').textContent =
-                `✅ ${state.csvFileName} (${state.csvRows.length} registros)`;
-            document.getElementById('badge-data').textContent = '✓';
+            setFileStatus('data-file-name', 'check-circle-2', `${state.csvFileName} (${state.csvRows.length} registros)`);
+            setStepBadgeCompleted('badge-data');
         }
 
         // 2b. Restore field values (positions, sizes, fonts, selected CSV columns…)
@@ -146,9 +145,9 @@ async function restoreSession() {
         if (templateOk && state.templateImage) {
             const w = state.templateImage.width, h = state.templateImage.height;
             document.getElementById('zone-template')?.classList.add('has-file');
-            document.getElementById('template-file-name').textContent = `✅ ${state.templateFileName} (${w}×${h})`;
+            setFileStatus('template-file-name', 'check-circle-2', `${state.templateFileName} (${w}×${h})`);
             document.getElementById('badge-template')?.classList.add('completed');
-            document.getElementById('badge-template').textContent = '✓';
+            setStepBadgeCompleted('badge-template');
             document.getElementById('status-template').textContent  = `Plantilla: ${state.templateFileName}`;
             document.getElementById('status-dimensions').textContent = `${w}×${h}px`;
         }
@@ -156,10 +155,9 @@ async function restoreSession() {
         if (state.records.length > 0) {
             const photoCount = Object.keys(state.photoPaths).length;
             document.getElementById('zone-photos')?.classList.add('has-file');
-            document.getElementById('photos-file-name').textContent =
-                `✅ ${photoCount} foto${photoCount !== 1 ? 's' : ''} (sesión restaurada)`;
+            setFileStatus('photos-file-name', 'check-circle-2', `${photoCount} foto${photoCount !== 1 ? 's' : ''} (sesión restaurada)`);
             document.getElementById('badge-photos')?.classList.add('completed');
-            document.getElementById('badge-photos').textContent = '✓';
+            setStepBadgeCompleted('badge-photos');
         }
 
         // 5. Refresh all UI
