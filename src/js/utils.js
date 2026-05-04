@@ -141,3 +141,14 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Safe for attribute context — textContent does not escape quotes,
+// so values interpolated into title=""/alt=""/etc. could break out.
+function escapeHtmlAttr(text) {
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+

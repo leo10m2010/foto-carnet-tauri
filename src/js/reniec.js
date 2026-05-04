@@ -33,7 +33,59 @@ function clearReniecToken() {
     const input = document.getElementById('field-reniec-token');
     if (input) input.value = '';
     updateReniecTokenStatus();
+    const result = document.getElementById('reniec-test-result');
+    if (result) result.innerHTML = '';
     showToast('Token RENIEC eliminado', 'info');
+}
+
+// Test-probe the token with a well-known public DNI so the user can verify it works.
+// Uses "12345678" which apisperu returns a sample record for; even a 404 confirms the token is valid.
+async function testReniecToken() {
+    const btn    = document.getElementById('btn-test-reniec');
+    const result = document.getElementById('reniec-test-result');
+    const token  = getReniecToken();
+
+    if (!token) {
+        if (result) result.innerHTML = '<span style="color:#f87171;">Pega tu token primero.</span>';
+        return;
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Probando…'; }
+    if (result) result.innerHTML = '<span style="color:var(--text-muted);">Consultando RENIEC…</span>';
+
+    try {
+        let json, httpStatus = 0, ok = false;
+        if (window.electronAPI?.queryRENIEC) {
+            const r = await window.electronAPI.queryRENIEC('12345678', token);
+            ok   = r.ok;
+            json = r.body;
+            if (!ok) throw new Error(r.error || 'Falló la consulta');
+        } else {
+            const resp = await fetch(`https://dniruc.apisperu.com/api/v1/dni/12345678?token=${encodeURIComponent(token)}`);
+            httpStatus = resp.status;
+            if (resp.status === 401 || resp.status === 403) throw new Error('Token inválido o sin permisos');
+            if (resp.status === 429) throw new Error('Límite de consultas superado');
+            json = await resp.json().catch(() => ({}));
+        }
+
+        // apisperu returns { success:false, message:"DNI no encontrado" } for unknown DNIs with a valid token —
+        // that still proves the token works.
+        const tokenWorks = (json && json.success !== false) || (json && json.message && !/token/i.test(json.message));
+        if (tokenWorks) {
+            if (result) result.innerHTML = '<span style="color:#34d399;font-weight:600;">✓ Token válido — RENIEC responde correctamente.</span>';
+            showToast('Token RENIEC verificado', 'success');
+        } else {
+            const msg = json?.message || 'Respuesta inesperada';
+            if (/token/i.test(msg)) throw new Error(msg);
+            if (result) result.innerHTML = `<span style="color:#34d399;font-weight:600;">✓ Token válido</span> <span style="color:var(--text-muted);">(respuesta: ${escapeHtml(msg)})</span>`;
+        }
+    } catch (err) {
+        const msg = err?.message || 'Error al probar el token';
+        if (result) result.innerHTML = `<span style="color:#f87171;font-weight:600;">✗ ${escapeHtml(msg)}</span>`;
+        showToast(`Token RENIEC: ${msg}`, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Probar'; }
+    }
 }
 
 async function enrichWithRENIEC() {
@@ -50,9 +102,10 @@ async function enrichWithRENIEC() {
     const dniIndexMap = new Map(state.records.map((r, i) => [getRecordKey(r), i]));
 
     showToast(`Verificando ${toEnrich.length} DNI${toEnrich.length > 1 ? 's' : ''} en RENIEC…`, 'info');
-    updateReniecStatChip('…');
+    updateReniecStatChip(`0/${toEnrich.length}`);
 
     let ok = 0, notFound = 0, errors = 0;
+    let firstError = '';
 
     for (let i = 0; i < toEnrich.length; i++) {
         if (i > 0) await new Promise(r => setTimeout(r, 200)); // ≈ 5 req/s, skip on first
@@ -80,6 +133,14 @@ async function enrichWithRENIEC() {
                 const resp = await fetch(
                     `https://dniruc.apisperu.com/api/v1/dni/${dni}?token=${token}`
                 );
+                if (!resp.ok) {
+                    const code = resp.status;
+                    if (code === 401 || code === 403) throw new Error('Token RENIEC inválido o sin permisos');
+                    if (code === 404) throw new Error('DNI no encontrado');
+                    if (code === 429) throw new Error('Límite de consultas superado — espera unos segundos');
+                    if (code >= 500)  throw new Error(`Error del servidor RENIEC (${code})`);
+                    throw new Error(`Respuesta HTTP inesperada (${code})`);
+                }
                 json = await resp.json();
             }
 
@@ -105,17 +166,21 @@ async function enrichWithRENIEC() {
                 state.records[idx].reniecOk = false;
                 notFound++;
             }
-        } catch (_) {
+        } catch (err) {
             if (isStale()) return;
             state.records[idx].reniecOk = false;
             errors++;
+            const msg = err?.message || '';
+            if (!firstError) firstError = msg;
+            // Token/rate-limit errors will repeat for every remaining DNI — stop early.
+            if (msg.includes('Token RENIEC') || msg.includes('Límite de consultas')) break;
         }
 
-        // Update chip counter every 5 records (cheap text update, no DOM rebuild)
-        if (i % 5 === 4 || i === toEnrich.length - 1) {
-            if (isStale()) return;
-            updateReniecStatChip(`${ok}/${toEnrich.length}`);
-        }
+        // Update chip counter every record (cheap text update) so large batches show live progress
+        if (isStale()) return;
+        const processed = i + 1;
+        const suffix = processed < toEnrich.length ? ` (${ok} ok)` : '';
+        updateReniecStatChip(`${processed}/${toEnrich.length}${suffix}`);
     }
 
     if (isStale()) return;
@@ -133,8 +198,9 @@ async function enrichWithRENIEC() {
     if (corrected > 0) msg += `, ${corrected} nombre${corrected > 1 ? 's' : ''} corregido${corrected > 1 ? 's' : ''}`;
     if (notFound > 0)  msg += `, ${notFound} no encontrado${notFound > 1 ? 's' : ''}`;
     if (errors > 0)    msg += `, ${errors} con error`;
+    if (firstError)    msg += ` — ${firstError}`;
 
-    showToast(msg, ok > 0 ? 'success' : 'warning');
+    showToast(msg, ok > 0 ? 'success' : (errors > 0 ? 'error' : 'warning'));
 
     // After enrichment: detect if filename parser had nombres/apellidos swapped
     // and auto-repair unverified records if the swap pattern is consistent.

@@ -84,6 +84,10 @@
                             <button type="button" class="btn btn-secondary" style="flex:1;font-size:0.75rem;padding:7px 10px;" onclick="document.getElementById('input-photos-folder').click()"><i data-lucide="folder-open" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Seleccionar carpeta</button>
                             <input type="file" id="input-photos-folder" webkitdirectory style="display:none">
                         </div>
+                        <div style="margin-top:6px;">
+                            <button type="button" id="btn-watch-folder" class="btn btn-secondary" style="width:100%;font-size:0.75rem;padding:7px 10px;" onclick="toggleFolderWatcher()"><i data-lucide="eye" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Vincular carpeta (auto-importar)</button>
+                        </div>
+                        <div id="watched-folder-status" style="display:none;align-items:center;gap:8px;margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);font-size:0.72rem;color:var(--text-muted);"></div>
 
                         <!-- Data stats -->
                         <div id="data-preview" style="display:none; margin-top: 12px;">
@@ -106,9 +110,15 @@
                                 <i data-lucide="pencil" style="width:13px;height:13px;color:var(--accent-1);flex-shrink:0;"></i>
                                 <span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Editar registro actual</span>
                             </div>
-                            <div style="display:flex;flex-direction:column;gap:5px;">
-                                <input type="text" id="sidebar-nombres" placeholder="Nombres" autocomplete="off" style="width:100%;box-sizing:border-box;">
-                                <input type="text" id="sidebar-apellidos" placeholder="Apellidos" autocomplete="off" style="width:100%;box-sizing:border-box;">
+                            <div style="display:flex;flex-direction:column;gap:8px;">
+                                <div style="display:flex;flex-direction:column;gap:3px;">
+                                    <label for="sidebar-nombres" style="font-size:0.68rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Nombres</label>
+                                    <input type="text" id="sidebar-nombres" placeholder="Nombres" autocomplete="off" style="width:100%;box-sizing:border-box;">
+                                </div>
+                                <div style="display:flex;flex-direction:column;gap:3px;">
+                                    <label for="sidebar-apellidos" style="font-size:0.68rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Apellidos</label>
+                                    <input type="text" id="sidebar-apellidos" placeholder="Apellidos" autocomplete="off" style="width:100%;box-sizing:border-box;">
+                                </div>
                             </div>
                             <div style="display:flex;gap:6px;margin-top:7px;">
                                 <button type="button" class="btn btn-primary" style="flex:1;font-size:0.73rem;padding:6px 8px;" onclick="commitSidebarNameEdit()"><i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px;"></i>Aplicar</button>
@@ -138,10 +148,14 @@
                                 <i data-lucide="eye" id="icon-toggle-token" style="width:14px;height:14px;vertical-align:middle;"></i>
                             </button>
                         </div>
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
-                            <p style="font-size:0.73rem;color:var(--text-muted);margin:0;">Token gratuito en <strong>apisperu.com</strong> — se guarda localmente.</p>
-                            <button type="button" class="btn btn-secondary" onclick="clearReniecToken()" style="font-size:0.72rem;padding:3px 8px;flex-shrink:0;margin-left:8px;">Limpiar</button>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:8px;flex-wrap:wrap;">
+                            <p style="font-size:0.73rem;color:var(--text-muted);margin:0;flex:1;min-width:140px;">Token gratuito en <strong>apisperu.com</strong> — se guarda localmente.</p>
+                            <div style="display:flex;gap:6px;flex-shrink:0;">
+                                <button type="button" class="btn btn-primary" id="btn-test-reniec" onclick="testReniecToken()" style="font-size:0.72rem;padding:3px 8px;" title="Consulta un DNI de prueba para verificar el token">Probar</button>
+                                <button type="button" class="btn btn-secondary" onclick="clearReniecToken()" style="font-size:0.72rem;padding:3px 8px;">Limpiar</button>
+                            </div>
                         </div>
+                        <div id="reniec-test-result" style="margin-top:6px;font-size:0.73rem;"></div>
                     </div>
                 </div>
 
@@ -508,19 +522,20 @@
             <div class="toolbar">
                 <div class="toolbar-left">
                     <div class="nav-controls">
-                        <button class="nav-btn" id="btn-prev" onclick="navigateRecord(-1)" disabled title="Anterior"><i data-lucide="chevron-left" style="width:16px;height:16px;"></i></button>
+                        <button class="nav-btn" id="btn-prev" onclick="navigateRecord(-1)" disabled title="Anterior" aria-label="Registro anterior"><i data-lucide="chevron-left" style="width:16px;height:16px;"></i></button>
                         <div class="nav-info"><span id="current-index">0</span> / <span id="total-records">0</span></div>
-                        <button class="nav-btn" id="btn-next" onclick="navigateRecord(1)" disabled title="Siguiente"><i data-lucide="chevron-right" style="width:16px;height:16px;"></i></button>
+                        <button class="nav-btn" id="btn-next" onclick="navigateRecord(1)" disabled title="Siguiente" aria-label="Registro siguiente"><i data-lucide="chevron-right" style="width:16px;height:16px;"></i></button>
                     </div>
                     <div class="zoom-controls">
-                        <button class="nav-btn" onclick="changeZoom(-0.1)" title="Alejar"><i data-lucide="minus" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" onclick="changeZoom(-0.1)" title="Alejar" aria-label="Alejar"><i data-lucide="minus" style="width:14px;height:14px;"></i></button>
                         <span class="zoom-level" id="zoom-level">100%</span>
-                        <button class="nav-btn" onclick="changeZoom(0.1)" title="Acercar"><i data-lucide="plus" style="width:14px;height:14px;"></i></button>
-                        <button class="nav-btn" onclick="resetZoom()" title="Zoom 100%"><i data-lucide="maximize-2" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" onclick="changeZoom(0.1)" title="Acercar" aria-label="Acercar"><i data-lucide="plus" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" onclick="resetZoom()" title="Zoom 100%" aria-label="Restablecer zoom a 100%"><i data-lucide="maximize-2" style="width:14px;height:14px;"></i></button>
                     </div>
                     <div class="history-controls">
-                        <button class="nav-btn" id="btn-undo" onclick="undoEdit()" disabled title="Deshacer (Ctrl+Z)"><i data-lucide="undo-2" style="width:14px;height:14px;"></i></button>
-                        <button class="nav-btn" id="btn-redo" onclick="redoEdit()" disabled title="Rehacer (Ctrl+Y)"><i data-lucide="redo-2" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" id="btn-undo" onclick="undoEdit()" disabled title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><i data-lucide="undo-2" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" id="btn-redo" onclick="redoEdit()" disabled title="Rehacer (Ctrl+Y)" aria-label="Rehacer"><i data-lucide="redo-2" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" id="btn-help" onclick="openHelpModal()" title="Atajos de teclado (?)" aria-label="Ayuda"><i data-lucide="help-circle" style="width:14px;height:14px;"></i></button>
                     </div>
                 </div>
                 <div class="toolbar-right">
@@ -693,6 +708,7 @@
                 <div>
                     <span id="status-template">Plantilla: —</span> &nbsp;|&nbsp;
                     <span id="status-dimensions">—</span> &nbsp;|&nbsp;
+                    <span id="status-export-stats" title="Exportaciones realizadas desde la instalación" style="color:var(--text-muted);"></span> &nbsp;|&nbsp;
                     <button type="button" id="btn-check-updates" onclick="manualCheckForUpdates()" title="Buscar actualizaciones" style="background:none;border:none;padding:0;cursor:pointer;color:var(--text-muted);font-size:0.75rem;font-family:inherit;transition:color 0.15s;" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-muted)'"><i data-lucide="refresh-cw" style="width:11px;height:11px;vertical-align:-1px;margin-right:3px;"></i>Buscar actualizaciones</button> &nbsp;|&nbsp;
                     <span>Creado por Renato Espinoza | Oficina de Comunicación e Imagen Institucional <span style="color:#ef4444;">&#10084;</span></span>
                 </div>
@@ -708,8 +724,45 @@
             <p id="modal-text">Procesando carnet 0 de 0</p>
             <div class="progress-bar">
                 <div class="progress-fill" id="progress-fill"></div>
+                <span class="progress-percent" id="progress-percent">0%</span>
             </div>
             <button type="button" class="btn btn-secondary modal-cancel-btn" id="modal-cancel-btn" onclick="cancelCurrentJob()" style="display:none;margin-top:12px;">Cancelar exportación</button>
+        </div>
+    </div>
+
+    <!-- Help / Shortcuts Modal -->
+    <div class="modal-overlay" id="modal-help" onclick="if(event.target===this)closeHelpModal()">
+        <div class="modal-content help-modal">
+            <button type="button" class="help-close" onclick="closeHelpModal()" title="Cerrar (Esc)" aria-label="Cerrar">×</button>
+            <h3><i data-lucide="keyboard" style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;"></i>Atajos de teclado</h3>
+            <div class="help-grid">
+                <div class="help-col">
+                    <h4>Navegación</h4>
+                    <div class="help-row"><kbd>←</kbd><kbd>→</kbd><span>Registro anterior / siguiente</span></div>
+                    <div class="help-row"><kbd>Ctrl</kbd><kbd>0</kbd><span>Reset zoom</span></div>
+                    <div class="help-row"><kbd>Alt</kbd><kbd>rueda</kbd><span>Rotar foto</span></div>
+                </div>
+                <div class="help-col">
+                    <h4>Edición</h4>
+                    <div class="help-row"><kbd>Ctrl</kbd><kbd>Z</kbd><span>Deshacer</span></div>
+                    <div class="help-row"><kbd>Ctrl</kbd><kbd>Y</kbd><span>Rehacer</span></div>
+                    <div class="help-row"><kbd>X</kbd><kbd>Y</kbd><span>Centrar elemento</span></div>
+                    <div class="help-row"><kbd>R</kbd><span>Reset posición / tamaño</span></div>
+                </div>
+                <div class="help-col">
+                    <h4>Foto</h4>
+                    <div class="help-row"><kbd>I</kbd><span>Config individual</span></div>
+                    <div class="help-row"><kbd>G</kbd><span>Gotero (fondo)</span></div>
+                    <div class="help-row"><kbd>C</kbd><span>Mover foto</span></div>
+                    <div class="help-row"><kbd>[</kbd><kbd>]</kbd><span>Rotar ±90°</span></div>
+                    <div class="help-row"><kbd>{</kbd><kbd>}</kbd><span>Rotar ±1°</span></div>
+                </div>
+                <div class="help-col">
+                    <h4>Ayuda</h4>
+                    <div class="help-row"><kbd>?</kbd><span>Abrir este panel</span></div>
+                    <div class="help-row"><kbd>Esc</kbd><span>Cerrar / cancelar</span></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -734,6 +787,7 @@
     <script src="js/interaction.js"></script>
     <script src="js/export.js"></script>
     <script src="js/ui.js"></script>
+    <script src="js/watcher.js"></script>
     <script src="js/init.js"></script>
     <script>
         // Initialize Lucide icons after DOM loads

@@ -312,6 +312,17 @@ body.ui-mode-simple .advanced-only {
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2), 0 10px 24px rgba(2, 6, 23, 0.28);
 }
 
+.upload-zone.drop-active {
+  border-color: var(--accent-1);
+  border-style: solid;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25), 0 10px 24px rgba(2, 6, 23, 0.28);
+}
+
+.upload-zone.drop-active * {
+  pointer-events: none;
+}
+
+
 .upload-zone .upload-icon {
   font-size: 2rem;
   margin-bottom: 8px;
@@ -478,6 +489,22 @@ input[type="color"] {
 td.reniec-ok      { color: #34d399; font-weight: 700; text-align: center; cursor: default; }
 td.reniec-err     { color: #f87171; text-align: center; cursor: default; }
 td.reniec-pending { color: var(--text-muted); text-align: center; font-size: 0.7rem; }
+
+tr.reniec-corrected {
+  background: rgba(250, 204, 21, 0.06);
+}
+td.reniec-fixed-cell {
+  color: #fde68a;
+  font-weight: 600;
+  position: relative;
+}
+td.reniec-fixed-cell::after {
+  content: '✎';
+  margin-left: 6px;
+  color: #facc15;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
 /* ---- end RENIEC ---- */
 
 .data-table-wrapper {
@@ -1883,8 +1910,16 @@ td.reniec-pending { color: var(--text-muted); text-align: center; font-size: 0.7
   align-items: center;
   gap: 8px;
   box-shadow: var(--shadow-lg);
-  animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s;
+  animation: slideIn 0.3s ease;
   max-width: 350px;
+  cursor: pointer;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.toast.toast-leaving {
+  opacity: 0;
+  transform: translateX(40px);
+  pointer-events: none;
 }
 
 .toast.success {
@@ -1969,10 +2004,11 @@ td.reniec-pending { color: var(--text-muted); text-align: center; font-size: 0.7
 }
 
 .progress-bar {
+  position: relative;
   width: 100%;
-  height: 6px;
+  height: 18px;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.85));
-  border-radius: 3px;
+  border-radius: 9px;
   margin-top: 16px;
   overflow: hidden;
 }
@@ -1980,10 +2016,24 @@ td.reniec-pending { color: var(--text-muted); text-align: center; font-size: 0.7
 .progress-bar .progress-fill {
   height: 100%;
   background: var(--accent-gradient);
-  border-radius: 3px;
+  border-radius: 9px;
   transition: width 0.3s ease;
   width: 0%;
   box-shadow: 0 0 14px rgba(56, 189, 248, 0.55);
+}
+
+.progress-bar .progress-percent {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #f2f7ff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 @keyframes floatOrb {
@@ -2668,8 +2718,82 @@ i[data-lucide] {
 
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
-  outline: 2px solid rgba(123, 173, 233, 0.6);
-  outline-offset: 1px;
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-1);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Help / Shortcuts modal */
+.help-modal {
+  max-width: 720px;
+  text-align: left;
+  padding: 28px 32px 32px;
+  position: relative;
+}
+.help-modal h3 {
+  text-align: left;
+  margin: 0 0 18px;
+  font-size: 1.05rem;
+}
+.help-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.help-close:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-1);
+}
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 18px 28px;
+}
+.help-col h4 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-1);
+  margin: 0 0 10px;
+}
+.help-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+.help-row span {
+  margin-left: 6px;
+  flex: 1;
+}
+.help-row kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 2px 7px;
+  font-size: 0.7rem;
+  font-family: 'SF Mono', Consolas, monospace;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 4px;
+  color: var(--text-primary);
+  text-align: center;
 }
 }

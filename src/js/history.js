@@ -104,6 +104,19 @@ function getSnapshotSignature(snapshot) {
     }
 }
 
+// Evicts oldest entries until the stack is under both count and byte caps.
+// Never drops the last entry (so undo never becomes non-functional mid-session).
+function trimHistoryStack(stack) {
+    const { maxSize, maxBytes } = state.history;
+    while (stack.length > maxSize) stack.shift();
+
+    let total = 0;
+    for (const s of stack) total += s._approxBytes || 0;
+    while (stack.length > 1 && total > maxBytes) {
+        total -= stack.shift()._approxBytes || 0;
+    }
+}
+
 function pushUndoSnapshot(reason = 'edit') {
     if (state.history.suspend) return;
 
@@ -111,10 +124,11 @@ function pushUndoSnapshot(reason = 'edit') {
     const sig = getSnapshotSignature(snap);
     if (sig === state.history.lastSignature) return;
 
-    if (state.history.undoStack.length >= state.history.maxSize) {
-        state.history.undoStack.shift();
-    }
+    // Store the approx byte size alongside the snapshot so trim doesn't re-stringify.
+    snap._approxBytes = sig.length;
+
     state.history.undoStack.push(snap);
+    trimHistoryStack(state.history.undoStack);
     state.history.redoStack = [];
     state.history.lastSignature = sig;
     updateHistoryButtons();
@@ -151,8 +165,10 @@ function undoEdit() {
     }
 
     const current = createHistorySnapshot();
+    current._approxBytes = getSnapshotSignature(current).length;
     const previous = state.history.undoStack.pop();
     state.history.redoStack.push(current);
+    trimHistoryStack(state.history.redoStack);
     applyHistorySnapshot(previous);
     state.history.lastSignature = getSnapshotSignature(previous);
     updateHistoryButtons();
@@ -165,8 +181,10 @@ function redoEdit() {
     }
 
     const current = createHistorySnapshot();
+    current._approxBytes = getSnapshotSignature(current).length;
     const next = state.history.redoStack.pop();
     state.history.undoStack.push(current);
+    trimHistoryStack(state.history.undoStack);
     applyHistorySnapshot(next);
     state.history.lastSignature = getSnapshotSignature(next);
     updateHistoryButtons();
@@ -183,6 +201,21 @@ function setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
         const tag = e.target?.tagName;
         const isTypingTarget = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
+
+        // Help modal: ? toggles, Esc closes. Allow ? even inside inputs would be disruptive — skip when typing.
+        const helpModal = document.getElementById('modal-help');
+        const helpOpen = helpModal && helpModal.classList.contains('active');
+        if (!isTypingTarget && e.key === '?') {
+            e.preventDefault();
+            toggleHelpModal();
+            return;
+        }
+        if (helpOpen && e.key === 'Escape') {
+            e.preventDefault();
+            closeHelpModal();
+            return;
+        }
+
         if (isTypingTarget) return;
 
         if ((e.ctrlKey || e.metaKey) && e.key === '0') {

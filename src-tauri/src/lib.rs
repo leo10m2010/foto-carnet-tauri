@@ -1,9 +1,12 @@
 use base64::Engine;
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, FileIdMap};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::RwLock;
-use std::time::SystemTime;
+use std::sync::{Mutex, RwLock};
+use std::time::{Duration, SystemTime};
+use tauri::Emitter;
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
@@ -13,12 +16,22 @@ struct CacheEntry {
     mtime: SystemTime,
 }
 
+/// Slot holding the active folder watcher (kept alive while watching).
+/// Dropping the debouncer stops the OS-level watcher.
+#[derive(Default)]
+struct WatcherSlot {
+    debouncer: Option<Debouncer<RecommendedWatcher, FileIdMap>>,
+    watched_path: Option<String>,
+}
+
 /// Shared state across Tauri commands.
 struct AppState {
     /// Full-res photo cache: path → CacheEntry. RwLock allows concurrent reads.
     file_cache: RwLock<HashMap<String, CacheEntry>>,
     /// Thumbnail cache (separate so full-res and thumb don't evict each other).
     thumb_cache: RwLock<HashMap<String, CacheEntry>>,
+    /// Active folder watcher (only one at a time).
+    watcher: Mutex<WatcherSlot>,
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -77,6 +90,14 @@ const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "bmp", "webp", "gif"];
 /// Maximum dimension for full-res photos sent over IPC (enough for any carnet print quality).
 const MAX_DIM: u32 = 1600;
 
+/// Reject files larger than this before even reading — prevents memory exhaustion
+/// from an accidental 500 MB file landing in the photos folder.
+const MAX_FILE_BYTES: u64 = 50 * 1024 * 1024; // 50 MB
+
+/// Reject images whose declared dimensions would blow up RAM during decode.
+/// A 12000×12000 RGBA image is ~576 MB uncompressed — above this we refuse.
+const MAX_IMAGE_DIM: u32 = 12000;
+
 fn is_image_path(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -134,6 +155,22 @@ fn get_mtime(path: &str) -> SystemTime {
         .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
+/// Read image dimensions from the header only (cheap — does not decode pixels).
+/// Returns None for unknown formats or malformed headers.
+fn image_dims_from_bytes(data: &[u8], ext: &str) -> Option<(u32, u32)> {
+    use image::{ImageFormat, ImageReader};
+    use std::io::Cursor;
+    let fmt = match ext {
+        "png"        => ImageFormat::Png,
+        "gif"        => ImageFormat::Gif,
+        "bmp"        => ImageFormat::Bmp,
+        "webp"       => ImageFormat::WebP,
+        "jpg"|"jpeg" => ImageFormat::Jpeg,
+        _            => return None,
+    };
+    ImageReader::with_format(Cursor::new(data), fmt).into_dimensions().ok()
+}
+
 /// Check if a cache entry is still valid (mtime unchanged).
 fn cache_entry_valid(entry: &CacheEntry, path: &str) -> bool {
     get_mtime(path) == entry.mtime
@@ -142,9 +179,8 @@ fn cache_entry_valid(entry: &CacheEntry, path: &str) -> bool {
 /// Core file-read logic shared by the single and batch commands.
 /// Checks the cache first (invalidates on mtime change), reads+resizes on miss.
 fn read_single_file(file_path: &str, cache: &RwLock<HashMap<String, CacheEntry>>, max_dim: u32) -> FileResult {
-    // Improvement 4: check cache, invalidate if file changed on disk.
-    {
-        let c = cache.read().unwrap();
+    // Check cache under a read lock; if poisoned, recover and continue (cache is best-effort).
+    if let Ok(c) = cache.read() {
         if let Some(entry) = c.get(file_path) {
             if cache_entry_valid(entry, file_path) {
                 return FileResult { ok: true, data_url: Some(entry.data_url.clone()), error: None };
@@ -159,14 +195,45 @@ fn read_single_file(file_path: &str, cache: &RwLock<HashMap<String, CacheEntry>>
         .unwrap_or("jpg")
         .to_lowercase();
 
+    // Reject oversized files up-front (OS-level size check, no I/O of bytes).
+    if let Ok(meta) = std::fs::metadata(file_path) {
+        if meta.len() > MAX_FILE_BYTES {
+            return FileResult {
+                ok: false,
+                data_url: None,
+                error: Some(format!(
+                    "Archivo muy grande ({} MB, máximo {} MB)",
+                    meta.len() / (1024 * 1024),
+                    MAX_FILE_BYTES / (1024 * 1024)
+                )),
+            };
+        }
+    }
+
     match std::fs::read(file_path) {
         Ok(data) => {
+            // Validate dimensions via a header-only read before full decode.
+            if let Some((w, h)) = image_dims_from_bytes(&data, &ext) {
+                if w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM {
+                    return FileResult {
+                        ok: false,
+                        data_url: None,
+                        error: Some(format!(
+                            "Imagen muy grande ({}×{}, máximo {}×{})",
+                            w, h, MAX_IMAGE_DIM, MAX_IMAGE_DIM
+                        )),
+                    };
+                }
+            }
             let data_url = encode_as_dataurl(&data, &ext, max_dim);
             let mtime = get_mtime(file_path);
-            cache.write().unwrap().insert(
-                file_path.to_string(),
-                CacheEntry { data_url: data_url.clone(), mtime },
-            );
+            // Best-effort cache insert — if poisoned, return the result anyway.
+            if let Ok(mut w) = cache.write() {
+                w.insert(
+                    file_path.to_string(),
+                    CacheEntry { data_url: data_url.clone(), mtime },
+                );
+            }
             FileResult { ok: true, data_url: Some(data_url), error: None }
         }
         Err(e) => FileResult { ok: false, data_url: None, error: Some(e.to_string()) },
@@ -202,14 +269,32 @@ async fn reniec_query(dni: String, token: String) -> ReniecResult {
         Ok(c) => c,
         Err(e) => return ReniecResult { ok: false, body: None, error: Some(e) },
     };
-    match client.get(&url).header("Accept", "application/json").send().await {
-        Ok(res) => match res.json::<serde_json::Value>().await {
-            Ok(body) => ReniecResult { ok: true, body: Some(body), error: None },
-            Err(e)   => ReniecResult { ok: false, body: None, error: Some(e.to_string()) },
-        },
-        Err(e) => ReniecResult { ok: false, body: None, error: Some(e.to_string()) },
+    let res = match client.get(&url).header("Accept", "application/json").send().await {
+        Ok(r)  => r,
+        Err(e) => return ReniecResult { ok: false, body: None, error: Some(e.to_string()) },
+    };
+
+    let status = res.status();
+    // Map non-success HTTP codes to actionable messages before touching the body.
+    if !status.is_success() {
+        let code = status.as_u16();
+        let msg = match code {
+            401 | 403 => "Token RENIEC inválido o sin permisos".to_string(),
+            404       => "DNI no encontrado".to_string(),
+            429       => "Límite de consultas superado — espera unos segundos".to_string(),
+            500..=599 => format!("Error del servidor RENIEC ({})", code),
+            _         => format!("Respuesta HTTP inesperada ({})", code),
+        };
+        return ReniecResult { ok: false, body: None, error: Some(msg) };
+    }
+
+    match res.json::<serde_json::Value>().await {
+        Ok(body) => ReniecResult { ok: true, body: Some(body), error: None },
+        Err(e)   => ReniecResult { ok: false, body: None, error: Some(e.to_string()) },
     }
 }
+
+const UPDATE_RELEASES_URL: &str = "https://api.github.com/repos/leo10m2010/foto-carnet-tauri/releases/latest";
 
 /// Check GitHub releases for a newer version.
 #[tauri::command]
@@ -217,10 +302,13 @@ async fn check_for_updates(app: tauri::AppHandle) -> Option<UpdateInfo> {
     let current = app.package_info().version.to_string();
     let client = http_client().ok()?;
     let res = client
-        .get("https://api.github.com/repos/leo10m2010/foto-carnet-tauri/releases/latest")
+        .get(UPDATE_RELEASES_URL)
         .header("User-Agent", "FotoCarnet-Tauri")
         .header("Accept", "application/vnd.github+json")
         .send().await.ok()?;
+    // GitHub returns 404 for private/missing repos and 403 when rate-limited.
+    // Parsing the JSON body of an error response would yield misleading info.
+    if !res.status().is_success() { return None; }
     let release: serde_json::Value = res.json().await.ok()?;
     let latest = release["tag_name"].as_str()?.trim_start_matches('v').to_string();
     let url    = release["html_url"].as_str()?.to_string();
@@ -251,6 +339,109 @@ fn read_files_batch(file_paths: Vec<String>, state: tauri::State<AppState>) -> V
     file_paths.par_iter()
         .map(|path| read_single_file(path, &cache.file_cache, MAX_DIM))
         .collect()
+}
+
+// ── Folder watcher commands ───────────────────────────────────────────────────
+
+/// Start watching a folder for new image files. Drops any previous watcher.
+/// Emits `photo-folder-changed` to the frontend with a list of new paths
+/// after a debounce window of ~800ms.
+#[tauri::command]
+fn start_watching_folder(
+    path: String,
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    let watch_path = std::path::PathBuf::from(&path);
+    if !watch_path.is_dir() {
+        return Err(format!("No es una carpeta válida: {}", path));
+    }
+
+    // Drop any existing watcher first so the OS handle is released before we
+    // register a new one (otherwise on Windows we can hit a transient EBUSY).
+    {
+        let mut slot = state.watcher.lock().map_err(|e| e.to_string())?;
+        slot.debouncer = None;
+        slot.watched_path = None;
+    }
+
+    let app_handle = app.clone();
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(800),
+        None,
+        move |res: DebounceEventResult| match res {
+            Ok(events) => {
+                use notify::EventKind;
+                let mut new_paths: Vec<String> = Vec::new();
+                for ev in events {
+                    if !matches!(ev.kind, EventKind::Create(_) | EventKind::Modify(_)) {
+                        continue;
+                    }
+                    for p in &ev.paths {
+                        if is_image_path(p) {
+                            if let Some(s) = p.to_str() {
+                                new_paths.push(s.to_string());
+                            }
+                        }
+                    }
+                }
+                if new_paths.is_empty() {
+                    return;
+                }
+                new_paths.sort();
+                new_paths.dedup();
+                let _ = app_handle.emit("photo-folder-changed", &new_paths);
+            }
+            Err(errors) => {
+                eprintln!("[watcher] errores: {:?}", errors);
+            }
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
+    debouncer
+        .watcher()
+        .watch(&watch_path, RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+
+    let mut slot = state.watcher.lock().map_err(|e| e.to_string())?;
+    slot.debouncer = Some(debouncer);
+    slot.watched_path = Some(path);
+    Ok(())
+}
+
+/// Stop the active folder watcher.
+#[tauri::command]
+fn stop_watching_folder(state: tauri::State<AppState>) -> Result<(), String> {
+    let mut slot = state.watcher.lock().map_err(|e| e.to_string())?;
+    slot.debouncer = None;
+    slot.watched_path = None;
+    Ok(())
+}
+
+/// Recursively list all image paths inside `path`. Used for the initial scan
+/// when binding a folder, before incremental events take over.
+#[tauri::command]
+fn list_folder_images(path: String) -> Vec<String> {
+    let dir = std::path::Path::new(&path);
+    if !dir.is_dir() {
+        return vec![];
+    }
+    let mut out = Vec::new();
+    collect_images_recursive(dir, &mut out);
+    out.sort();
+    out
+}
+
+/// Open a native folder picker. Returns the chosen path or None.
+#[tauri::command]
+fn pick_folder(app: tauri::AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    app.dialog()
+        .file()
+        .blocking_pick_folder()
+        .and_then(|fp| fp.into_path().ok())
+        .and_then(path_to_string)
 }
 
 // ── Dialog commands ───────────────────────────────────────────────────────────
@@ -376,6 +567,7 @@ pub fn run() {
         .manage(AppState {
             file_cache:  RwLock::new(HashMap::new()),
             thumb_cache: RwLock::new(HashMap::new()),
+            watcher:     Mutex::new(WatcherSlot::default()),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -392,6 +584,10 @@ pub fn run() {
             pick_save_path,
             save_base64_to_file,
             open_print_preview,
+            start_watching_folder,
+            stop_watching_folder,
+            list_folder_images,
+            pick_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error al iniciar FotoCarnet");

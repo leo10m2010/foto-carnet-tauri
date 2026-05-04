@@ -25,6 +25,10 @@ function toggleFilmstrip() {
 function applyFilmstripVisibility(animate) {
     const bar = document.getElementById('filmstrip-bar');
     if (!bar) return;
+    // Hide the whole bar when there are no records — nothing useful to show.
+    const hasRecords = state.records && state.records.length > 0;
+    bar.style.display = hasRecords ? '' : 'none';
+    if (!hasRecords) return;
     if (!animate) bar.classList.add('no-transition');
     bar.classList.toggle('is-open', !!state.filmstripVisible);
     const arrow = document.getElementById('filmstrip-arrow');
@@ -48,6 +52,9 @@ function renderFilmstrip() {
 
     const countEl = document.getElementById('filmstrip-count');
     if (countEl) countEl.textContent = state.records.length ? `${state.records.length} fotos` : '';
+
+    // Keep the bar hidden when empty / visible when there is data
+    applyFilmstripVisibility(false);
 
     if (!state.records.length) return;
 
@@ -88,7 +95,7 @@ function renderFilmstrip() {
 
     track.querySelectorAll('.thumb-canvas').forEach(canvas => _filmstripObserver.observe(canvas));
 
-    if (state.filmstripVisible) requestAnimationFrame(scrollFilmstripToActive);
+    if (state.filmstripVisible) requestAnimationFrame(() => scrollFilmstripToActive(false));
 }
 
 function _loadThumb(canvas) {
@@ -109,13 +116,21 @@ function updateFilmstripActive() {
     if (next) next.classList.add('is-active');
 }
 
-function scrollFilmstripToActive() {
+function scrollFilmstripToActive(smooth = true) {
     const container = document.getElementById('filmstrip-container');
     const track = document.getElementById('filmstrip-track');
     if (!container || !track) return;
     const thumb = track.children[state.currentIndex];
     if (!thumb) return;
-    container.scrollLeft = thumb.offsetLeft - container.clientWidth / 2 + thumb.offsetWidth / 2;
+    const target = thumb.offsetLeft - container.clientWidth / 2 + thumb.offsetWidth / 2;
+    // Avoid jumpy animation for tiny deltas and respect reduced-motion preferences
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    const delta = Math.abs(container.scrollLeft - target);
+    if (!smooth || prefersReducedMotion || delta < 4) {
+        container.scrollLeft = target;
+    } else {
+        container.scrollTo({ left: target, behavior: 'smooth' });
+    }
 }
 
 // Re-renders visible thumbnails after a debounce — called from tryRender on any edit.

@@ -17,6 +17,12 @@ function navigateRecord(delta) {
 }
 
 function clearAll() {
+    // Only prompt if there is actually something to lose
+    const hasData = state.records.length > 0 || state.templateImage || (state.csvRows && state.csvRows.length > 0);
+    if (hasData && !confirm('¿Seguro que quieres limpiar toda la sesión?\n\nSe eliminarán plantilla, fotos, datos y ediciones. Esta acción no se puede deshacer.')) {
+        return;
+    }
+
     // Abort any running RENIEC query
     state.reniecGeneration++;
 
@@ -44,6 +50,7 @@ function clearAll() {
     state.photosCount         = 0;
     state.csvData             = null;
     state.csvRows             = [];
+    state.csvFileName         = '';
     state.photoOverrides      = {};
     state.globalPhotoConfig   = null;
     state.currentIndex        = 0;
@@ -174,8 +181,35 @@ function resetZoom() {
 
 // ===================== SECTION TOGGLE =====================
 
+const COLLAPSED_SECTIONS_KEY = 'collapsed-sections';
+
+function getCollapsedSectionSet() {
+    try {
+        const raw = localStorage.getItem(COLLAPSED_SECTIONS_KEY);
+        return new Set(raw ? JSON.parse(raw) : []);
+    } catch (_) {
+        return new Set();
+    }
+}
+
+function persistCollapsedSections() {
+    const ids = Array.from(document.querySelectorAll('.config-section.collapsed')).map(s => s.id).filter(Boolean);
+    localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify(ids));
+}
+
 function toggleSection(sectionId) {
     const section = document.getElementById(sectionId);
+    if (!section) return;
     section.classList.toggle('collapsed');
+    persistCollapsedSections();
+}
+
+function restoreCollapsedSections() {
+    const saved = getCollapsedSectionSet();
+    if (saved.size === 0 && localStorage.getItem(COLLAPSED_SECTIONS_KEY) === null) return; // first run: respect HTML defaults
+    document.querySelectorAll('.config-section').forEach(section => {
+        if (!section.id) return;
+        section.classList.toggle('collapsed', saved.has(section.id));
+    });
 }
 

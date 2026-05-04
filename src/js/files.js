@@ -8,16 +8,28 @@ function setupFileHandlers() {
     ['zone-template', 'zone-photos', 'zone-data'].forEach(id => {
         const zone = document.getElementById(id);
         if (!zone) return;
+        let depth = 0;   // Track nested dragenter/leave on children so the hover state doesn't flicker
+        zone.addEventListener('dragenter', e => {
+            e.preventDefault();
+            depth++;
+            zone.classList.add('drop-active');
+        });
         zone.addEventListener('dragover', e => {
             e.preventDefault();
-            zone.style.borderColor = 'var(--accent-1)';
+            zone.classList.add('drop-active');
         });
         zone.addEventListener('dragleave', () => {
-            zone.style.borderColor = '';
+            depth = Math.max(0, depth - 1);
+            if (depth === 0) zone.classList.remove('drop-active');
         });
         zone.addEventListener('drop', e => {
             e.preventDefault();
-            zone.style.borderColor = '';
+            depth = 0;
+            zone.classList.remove('drop-active');
+            // In Tauri, the native drag-drop handler in tauri-bridge.js handles
+            // files with real paths — skip here to avoid double-processing
+            // (and losing paths needed for session restore).
+            if (window.__tauriDragDropHandled) return;
             const input = zone.querySelector('input[type="file"]');
             if (e.dataTransfer.files.length > 0) {
                 input.files = e.dataTransfer.files;
@@ -143,11 +155,10 @@ function handlePhotosUpload(e) {
         return false;
     });
 
-    console.log(`[Fotos] Total archivos en carpeta: ${files.length}, Imágenes detectadas: ${imageFiles.length}`);
     if (imageFiles.length === 0) {
-        // Log sample filenames for debugging
+        // Log sample filenames to aid debugging when nothing is detected as an image.
         const sampleNames = files.slice(0, 5).map(f => `"${f.name}" (type: ${f.type || 'N/A'})`);
-        console.log('[Fotos] Archivos encontrados:', sampleNames);
+        console.warn('[Fotos] Sin imágenes detectadas. Muestras:', sampleNames);
         showToast(`No se encontraron imágenes. ${files.length} archivos en la carpeta. Revisa la consola (F12) para más detalles.`, 'error');
         return;
     }

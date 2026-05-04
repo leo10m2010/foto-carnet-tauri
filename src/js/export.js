@@ -358,6 +358,7 @@ async function exportPNG() {
         const pngSaved = await downloadBlob(pngBlob, pngFilename);
         if (pngSaved === false && window.electronAPI?.pickSavePath) return; // cancelled native dialog
         showToast(pngSaved ? `PNG guardado: ${String(pngSaved).split(/[\\/]/).pop()}` : 'PNG descargado en alta calidad', 'success');
+        recordExport('png');
     } catch (err) {
         if (isJobCancelledError(err)) {
             showToast('Exportación cancelada por el usuario', 'warning');
@@ -436,6 +437,7 @@ async function exportAllZIP() {
                 : `ZIP generado: ${state.records.length} carnets individuales`,
             'success'
         );
+        recordExport('zip');
     } catch (err) {
         if (isJobCancelledError(err)) {
             showToast('Exportación ZIP cancelada por el usuario', 'warning');
@@ -492,7 +494,9 @@ async function exportPDF() {
 
         const { jsPDF } = window.jspdf;
         const orientation = document.getElementById('pdf-orientation').value;
-        const pageSize = String(document.getElementById('pdf-page-size')?.value || 'a4').toLowerCase();
+        const PAGE_SIZES = ['a2', 'a3', 'a4', 'a5', 'letter', 'legal', 'tabloid'];
+        const rawPageSize = String(document.getElementById('pdf-page-size')?.value || 'a4').toLowerCase();
+        const pageSize = PAGE_SIZES.includes(rawPageSize) ? rawPageSize : 'a4';
         const marginMM = Math.max(0, Number.parseFloat(document.getElementById('pdf-margin').value) || 10);
         const gapMM = Math.max(0, Number.parseFloat(document.getElementById('pdf-gap').value) || 5);
         const showCutGuides = !!document.getElementById('pdf-cut-guides')?.checked;
@@ -580,6 +584,7 @@ async function exportPDF() {
                 : `PDF ${pageSize.toUpperCase()} generado con ${state.records.length} carnets @ ${exportDPI} DPI`,
             'success'
         );
+        recordExport('pdf');
     } catch (err) {
         if (isJobCancelledError(err)) {
             showToast('Exportación PDF cancelada por el usuario', 'warning');
@@ -654,6 +659,7 @@ async function printAll() {
             printWindow.document.close();
             showToast('Diálogo de impresión preparado', 'info');
         }
+        recordExport('print');
     } catch (err) {
         if (isJobCancelledError(err)) {
             showToast('Impresión cancelada por el usuario', 'warning');

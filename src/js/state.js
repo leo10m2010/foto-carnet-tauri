@@ -45,6 +45,8 @@ const state = {
     photosCount: 0,
     csvData: null,            // Optional CSV data keyed by DNI
     csvRows: [],              // Raw CSV rows for remapping
+    csvFileName: '',          // Saved in session for UI restore (mirrors templateFileName)
+    watchedFolderPath: null,  // Carpeta vigilada para auto-importar fotos nuevas (Tauri)
     photoOverrides: {},       // { [dni]: { x, y, w, h } }
     globalPhotoConfig: null,  // Default photo position/size for all records
     defaultFieldValues: {},   // Snapshot of original field values (for quick reset)
@@ -89,7 +91,11 @@ const state = {
     history: {
         undoStack: [],
         redoStack: [],
-        maxSize: 60,
+        maxSize: 40,
+        // Approximate total-size cap for each stack (bytes of JSON).
+        // With large record sets a single snapshot can be hundreds of KB, so
+        // cap by weight in addition to count to avoid unbounded growth.
+        maxBytes: 50 * 1024 * 1024,
         suspend: false,
         lastSignature: '',
         zoomSessionUntil: 0,

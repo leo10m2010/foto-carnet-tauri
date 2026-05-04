@@ -25,11 +25,16 @@ function handleDataUpload(e) {
 
             // Store CSV data keyed by DNI
             const columns = Object.keys(data[0]);
-            const dniCol = autoDetectDNIColumn(columns);
+            if (!columns.length) {
+                showToast('El archivo no tiene columnas válidas', 'error');
+                return;
+            }
+            const dniCol = autoDetectDNIColumn(columns, data);
             const extraCol = autoDetectExtraColumn(columns);
 
             state.csvRows = data;
             state.csvData = dniCol ? buildCSVIndex(dniCol) : {};
+            state.csvFileName = file.name;
             invalidatePreflightReport();
 
             // Show column mapping
@@ -40,14 +45,27 @@ function handleDataUpload(e) {
             document.getElementById('data-file-name').textContent = `✅ ${file.name} (${data.length} registros)`;
             document.getElementById('badge-data').textContent = '✓';
 
+            // Warn if the auto-detected DNI column doesn't look like DNIs.
+            const dniRatio = dniCol ? dniLikeRatio(data, dniCol) : 0;
+            if (dniRatio < 0.3) {
+                showToast(
+                    `Advertencia: la columna "${dniCol}" no parece contener DNIs. Selecciona la columna correcta en el mapeo.`,
+                    'warning'
+                );
+            }
+
             // If photos already loaded, merge
             if (state.records.length > 0) {
-                mergeCSVData();
+                const matched = mergeCSVData();
                 showDataPreview();
                 tryRender();
+                if (matched === 0) {
+                    showToast('Ningún registro coincidió con el CSV. Revisa el mapeo de la columna DNI.', 'warning');
+                }
             }
 
             showToast(`CSV cargado: ${data.length} registros. Se vincularán por DNI.`, 'success');
+            saveSessionDebounced();
         } catch (err) {
             showToast('Error al leer el archivo: ' + err.message, 'error');
             console.error(err);
@@ -61,14 +79,43 @@ function handleDataUpload(e) {
     }
 }
 
-function autoDetectDNIColumn(columns) {
+// Fraction of rows whose value in `column` looks like a DNI (mostly digits, 6–12 long).
+function dniLikeRatio(rows, column) {
+    if (!column || !Array.isArray(rows) || rows.length === 0) return 0;
+    let hits = 0;
+    for (const row of rows) {
+        const raw = String(row?.[column] ?? '').trim();
+        const digits = raw.replace(/\D/g, '');
+        if (digits.length >= 6 && digits.length <= 12) hits++;
+    }
+    return hits / rows.length;
+}
+
+function autoDetectDNIColumn(columns, rows = []) {
     const cols = columns.map(c => c.toLowerCase().trim());
     const keywords = ['dni', 'documento', 'cedula', 'ci', 'id', 'doc', 'num_doc', 'numero_documento', 'rut'];
+
+    // Prefer a keyword-matched column whose content actually looks like DNIs.
+    for (const kw of keywords) {
+        const idx = cols.findIndex(c => c.includes(kw));
+        if (idx !== -1 && dniLikeRatio(rows, columns[idx]) >= 0.3) return columns[idx];
+    }
+    // Fallback: pick the column with the highest DNI-like content.
+    if (rows.length) {
+        let best = columns[0];
+        let bestRatio = dniLikeRatio(rows, best);
+        for (let i = 1; i < columns.length; i++) {
+            const r = dniLikeRatio(rows, columns[i]);
+            if (r > bestRatio) { best = columns[i]; bestRatio = r; }
+        }
+        if (bestRatio >= 0.3) return best;
+    }
+    // Last-resort: keyword match even if content doesn't look like DNI.
     for (const kw of keywords) {
         const idx = cols.findIndex(c => c.includes(kw));
         if (idx !== -1) return columns[idx];
     }
-    return columns[0]; // fallback to first column
+    return columns[0];
 }
 
 function autoDetectExtraColumn(columns) {
@@ -121,28 +168,37 @@ function buildCSVIndex(dniColumn) {
 
 function remergeCSV() {
     if (!Array.isArray(state.csvRows) || state.csvRows.length === 0 || state.records.length === 0) return;
-    mergeCSVData();
+    const matched = mergeCSVData();
     showDataPreview();
     tryRender();
+    if (matched === 0) {
+        showToast('Ningún registro coincidió con el CSV. Revisa el mapeo de la columna DNI.', 'warning');
+    }
 }
 
+// Returns the number of records that matched a CSV row by DNI — used to warn on zero-match mappings.
 function mergeCSVData() {
-    if (!Array.isArray(state.csvRows) || state.csvRows.length === 0) return;
+    if (!Array.isArray(state.csvRows) || state.csvRows.length === 0) return 0;
 
     const dniCol = document.getElementById('map-dni')?.value || '';
     const extraCol = document.getElementById('map-extra')?.value || '';
     state.csvData = buildCSVIndex(dniCol);
 
+    let matched = 0;
     state.records.forEach(record => {
         record.extra = '';
 
         // Find matching CSV row by DNI
         const key = getRecordKey(record);
         const csvRow = state.csvData[key];
-        if (csvRow && extraCol) {
-            record.extra = String(csvRow[extraCol] || '').trim();
+        if (csvRow) {
+            matched++;
+            if (extraCol) {
+                record.extra = String(csvRow[extraCol] || '').trim();
+            }
         }
     });
+    return matched;
 }
 
 function showDataPreview() {
@@ -154,6 +210,9 @@ function showDataPreview() {
     const preview = state.records.slice(0, 50);
     tbody.innerHTML = preview.map(r => {
         let verif = '<td class="reniec-pending">…</td>';
+        let rowClass = '';
+        let nombresClass = '';
+        let apellidosClass = '';
         if (r.reniecOk === true) {
             // Did the filename match what RENIEC has?
             const fnNom = (r.filenameNombres   || '').toUpperCase().trim();
@@ -163,16 +222,21 @@ function showDataPreview() {
             const matched = fnNom === rnNom && fnAp === rnAp;
             const tip = matched
                 ? 'Nombre del archivo coincide con RENIEC'
-                : `Archivo: ${escapeHtml(r.filenameApellidos)} ${escapeHtml(r.filenameNombres)} → corregido con RENIEC`;
-            verif = `<td class="reniec-ok" title="${tip}">${matched ? '✓' : '✓*'}</td>`;
+                : `Archivo: ${r.filenameApellidos || ''} ${r.filenameNombres || ''} → corregido con RENIEC`;
+            verif = `<td class="reniec-ok" title="${escapeHtmlAttr(tip)}">${matched ? '✓' : '✓*'}</td>`;
+            if (!matched) {
+                rowClass = 'reniec-corrected';
+                if (fnNom && fnNom !== rnNom) nombresClass = 'reniec-fixed-cell';
+                if (fnAp  && fnAp  !== rnAp)  apellidosClass = 'reniec-fixed-cell';
+            }
         } else if (r.reniecOk === false) {
             verif = '<td class="reniec-err" title="No encontrado en RENIEC">✗</td>';
         }
 
-        return `<tr>
+        return `<tr${rowClass ? ` class="${rowClass}"` : ''}>
             <td>${escapeHtml(r.dni)}</td>
-            <td>${escapeHtml(r.nombres)}</td>
-            <td>${escapeHtml(r.apellidos)}</td>
+            <td${nombresClass ? ` class="${nombresClass}" title="Corregido por RENIEC (original: ${escapeHtmlAttr(r.filenameNombres || '')})"` : ''}>${escapeHtml(r.nombres)}</td>
+            <td${apellidosClass ? ` class="${apellidosClass}" title="Corregido por RENIEC (original: ${escapeHtmlAttr(r.filenameApellidos || '')})"` : ''}>${escapeHtml(r.apellidos)}</td>
             <td>${escapeHtml(r.extra || '—')}</td>
             <td>${r.hasPhoto ? '✅' : '❌'}</td>
             ${verif}

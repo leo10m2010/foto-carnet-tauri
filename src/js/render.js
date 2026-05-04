@@ -102,11 +102,28 @@ async function getPhotoImageByKey(key) {
 
     return new Promise((resolve) => {
         const img = new Image();
+        let settled = false;
+        // 10s safety net in case the source is corrupt or the WebView decoder
+        // stalls without firing load/error (rare but has been seen in WebView2).
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            console.warn('[Photo] Timeout cargando imagen para key', key);
+            resolve(null);
+        }, 10000);
         img.onload = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
             state.photoImageCache.set(key, img);
             resolve(img);
         };
-        img.onerror = () => resolve(null);
+        img.onerror = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(null);
+        };
         img.src = source;
     });
 }

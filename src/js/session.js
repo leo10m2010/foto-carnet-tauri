@@ -22,6 +22,9 @@ function buildSessionData(includeDataUrl) {
         photoOverrides: state.photoOverrides || {},
         globalPhotoConfig: state.globalPhotoConfig || null,
         currentIndex: state.currentIndex || 0,
+        csvRows: state.csvRows || [],
+        csvFileName: state.csvFileName || '',
+        watchedFolderPath: state.watchedFolderPath || null,
         inputValues: readTrackedInputState(),
     };
 }
@@ -74,8 +77,32 @@ async function restoreSession() {
             state.photosMap[dniKey] = filePath; // lazy: getPhotoImageByKey reads it on demand
         }
 
-        // 2. Restore field values (positions, sizes, fonts…)
+        // 2a. Restore CSV rows + mapping UI. Must run BEFORE applyTrackedInputState
+        // so map-dni / map-extra have their <option>s populated when tracked values
+        // are written back (otherwise select.value = '…' is a no-op).
+        state.csvRows     = Array.isArray(data.csvRows) ? data.csvRows : [];
+        state.csvFileName = data.csvFileName || '';
+        if (state.csvRows.length) {
+            const columns  = Object.keys(state.csvRows[0] || {});
+            const autoDni   = autoDetectDNIColumn(columns, state.csvRows);
+            const autoExtra = autoDetectExtraColumn(columns);
+            populateCSVMapping(columns, autoDni, autoExtra);
+            document.getElementById('column-mapping').style.display = 'block';
+            document.getElementById('zone-data')?.classList.add('has-file');
+            document.getElementById('data-file-name').textContent =
+                `✅ ${state.csvFileName} (${state.csvRows.length} registros)`;
+            document.getElementById('badge-data').textContent = '✓';
+        }
+
+        // 2b. Restore field values (positions, sizes, fonts, selected CSV columns…)
         if (data.inputValues) applyTrackedInputState(data.inputValues);
+
+        // 2c. Rebuild csvData from the now-applied column mapping and merge with records
+        if (state.csvRows.length) {
+            const dniCol = document.getElementById('map-dni')?.value || '';
+            state.csvData = dniCol ? buildCSVIndex(dniCol) : {};
+            if (state.records.length) mergeCSVData();
+        }
 
         // 3. Reload template image
         let templateOk = false;
@@ -155,6 +182,15 @@ async function restoreSession() {
         // Background preload: load all session photos in parallel after restore
         // so the filmstrip and navigation feel instant instead of loading on demand.
         _preloadSessionPhotos();
+
+        // Reanudar vigilancia de carpeta si estaba activa antes (Tauri only).
+        // Hacemos esto en background para no bloquear la restauración.
+        if (data.watchedFolderPath && typeof startWatchingFolder === 'function') {
+            startWatchingFolder(data.watchedFolderPath).catch(err => {
+                console.warn('[Sesión] No se pudo reanudar la vigilancia:', err);
+                state.watchedFolderPath = null;
+            });
+        }
 
         return true;
     } catch (err) {
