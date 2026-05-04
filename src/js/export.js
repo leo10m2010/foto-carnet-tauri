@@ -331,8 +331,54 @@ function isJobCancelledError(err) {
     return err && (err.code === JOB_CANCELLED_ERROR || String(err.message || '') === JOB_CANCELLED_ERROR);
 }
 
+function hasExportableData() {
+    return !!state.templateImage && state.records.length > 0;
+}
+
+function validateExportReady(label = 'exportar') {
+    if (state.job.active) {
+        showToast('Ya hay una exportacion en curso. Espera a que termine o cancelala.', 'warning');
+        return false;
+    }
+    if (!state.templateImage || state.records.length === 0) {
+        showToast(`Carga una plantilla y fotos antes de ${label}.`, 'warning');
+        renderPreflightReport(null);
+        updateNavigation();
+        return false;
+    }
+    return true;
+}
+
+function setupExportToolbarHandlers() {
+    const actions = {
+        png: () => exportPNG(),
+        zip: () => exportAllZIP(),
+        pdf: () => exportPDF(),
+        print: () => printAll()
+    };
+
+    document.querySelectorAll('[data-export-action]').forEach(button => {
+        if (button.dataset.bound === '1') return;
+        button.dataset.bound = '1';
+
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (button.disabled) {
+                if (!hasExportableData()) {
+                    showToast('Carga una plantilla y fotos antes de exportar.', 'warning');
+                }
+                return;
+            }
+
+            const action = actions[button.dataset.exportAction];
+            if (action) action();
+        });
+    });
+}
+
 async function exportPNG() {
-    if (state.records.length === 0 || !state.templateImage) return;
+    if (!validateExportReady('exportar PNG')) return;
     const { widthCM, heightCM } = getConfiguredCarnetSizeCM();
     const dpi = getExportDPI();
 
@@ -373,7 +419,7 @@ async function exportPNG() {
 }
 
 async function exportAllZIP() {
-    if (state.records.length === 0 || !state.templateImage) return;
+    if (!validateExportReady('exportar ZIP')) return;
     const { widthCM, heightCM } = getConfiguredCarnetSizeCM();
     const dpi = getExportDPI();
 
@@ -479,7 +525,7 @@ function drawPDFCutGuides(pdf, x, y, w, h, markLengthMM = 3) {
 }
 
 async function exportPDF() {
-    if (state.records.length === 0 || !state.templateImage) return;
+    if (!validateExportReady('exportar PDF')) return;
     beginJob('export-pdf');
     showModal('Generando PDF...', `Procesando carnet 0 de ${state.records.length}`, true);
 
@@ -601,7 +647,7 @@ async function exportPDF() {
 // ===================== PRINT =====================
 
 async function printAll() {
-    if (state.records.length === 0 || !state.templateImage) return;
+    if (!validateExportReady('imprimir')) return;
     beginJob('print');
     showModal('Preparando impresión...', `Renderizando carnet 0 de ${state.records.length}`, true);
 

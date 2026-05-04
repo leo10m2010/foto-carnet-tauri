@@ -537,10 +537,10 @@
                     </div>
                 </div>
                 <div class="toolbar-right">
-                    <button class="btn btn-secondary btn-icon-text" id="btn-export-png" onclick="exportPNG()" disabled title="Exportar PNG"><i data-lucide="image-down"></i><span>PNG</span></button>
-                    <button class="btn btn-secondary btn-icon-text" id="btn-export-zip" onclick="exportAllZIP()" disabled title="Exportar ZIP individual"><i data-lucide="archive"></i><span>ZIP Individual</span></button>
-                    <button class="btn btn-primary btn-icon-text" id="btn-export-pdf" onclick="exportPDF()" disabled title="Exportar PDF"><i data-lucide="file-text"></i><span>Exportar PDF</span></button>
-                    <button class="btn btn-success btn-icon-text" id="btn-print" onclick="printAll()" disabled title="Imprimir"><i data-lucide="printer"></i><span>Imprimir</span></button>
+                    <button class="btn btn-secondary btn-icon-text" id="btn-export-png" data-export-action="png" disabled title="Exportar PNG"><i data-lucide="image-down"></i><span>PNG</span></button>
+                    <button class="btn btn-secondary btn-icon-text" id="btn-export-zip" data-export-action="zip" disabled title="Exportar ZIP individual"><i data-lucide="archive"></i><span>ZIP Individual</span></button>
+                    <button class="btn btn-primary btn-icon-text" id="btn-export-pdf" data-export-action="pdf" disabled title="Exportar PDF"><i data-lucide="file-text"></i><span>Exportar PDF</span></button>
+                    <button class="btn btn-success btn-icon-text" id="btn-print" data-export-action="print" disabled title="Imprimir"><i data-lucide="printer"></i><span>Imprimir</span></button>
                     <div class="toolbar-divider"></div>
                     <button class="btn btn-danger btn-icon-text" id="btn-clear" onclick="clearAll()" title="Eliminar todos los datos y empezar de cero"><i data-lucide="trash-2"></i><span>Limpiar</span></button>
                 </div>

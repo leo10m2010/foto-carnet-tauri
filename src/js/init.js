@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHistoryControls();
     setupMenuHandlers();
     setupKeyboardShortcuts();
+    setupExportToolbarHandlers();
     initFilmstrip();
     restoreCollapsedSections();
     applyFontPreviewToSelects();

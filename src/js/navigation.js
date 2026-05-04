@@ -137,10 +137,14 @@ function updateNavigation() {
     document.getElementById('btn-next').disabled = state.currentIndex >= total - 1;
 
     const hasData = total > 0 && state.templateImage;
-    document.getElementById('btn-export-png').disabled = !hasData;
-    document.getElementById('btn-export-zip').disabled = !hasData;
-    document.getElementById('btn-export-pdf').disabled = !hasData;
-    document.getElementById('btn-print').disabled = !hasData;
+    ['btn-export-png', 'btn-export-zip', 'btn-export-pdf', 'btn-print'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        const disabled = !hasData;
+        btn.disabled = disabled;
+        btn.setAttribute('aria-disabled', String(disabled));
+        btn.classList.toggle('is-disabled', disabled);
+    });
     if (!hasData) {
         renderPreflightReport(null);
     }
