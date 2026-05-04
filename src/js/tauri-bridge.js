@@ -64,6 +64,10 @@
         openPrintPreview: (html) =>
             invoke('open_print_preview', { html }),
 
+        // Abre un URL externo en el navegador del sistema
+        // (window.open está bloqueado en Tauri/WebView2 por defecto)
+        openExternal: (url) => invoke('open_external_url', { url }),
+
         // ── Folder watcher ────────────────────────────────────────────────
         // Diálogo nativo "Seleccionar carpeta" — devuelve la ruta o null
         pickFolder: () => invoke('pick_folder'),

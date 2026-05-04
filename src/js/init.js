@@ -70,7 +70,14 @@ function setupUpdateBanner() {
         const link   = document.getElementById('update-banner-link');
         if (!banner || !text || !link) return;
         text.textContent = `Nueva versión v${version} disponible`;
-        link.onclick = (e) => { e.preventDefault(); window.open(url, '_blank'); };
+        link.onclick = (e) => {
+            e.preventDefault();
+            if (window.electronAPI?.openExternal) {
+                window.electronAPI.openExternal(url).catch(() => window.open(url, '_blank'));
+            } else {
+                window.open(url, '_blank');
+            }
+        };
         banner.style.display = 'flex';
         if (typeof lucide !== 'undefined') lucide.createIcons();
     });

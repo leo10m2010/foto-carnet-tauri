@@ -545,6 +545,16 @@ fn open_print_preview(html: String, app: tauri::AppHandle) -> Result<(), String>
         .map_err(|e| format!("No se pudo abrir el navegador: {}", e))
 }
 
+/// Open an external URL in the user's default browser.
+/// Tauri blocks window.open() by default, so the renderer must go through this.
+#[tauri::command]
+fn open_external_url(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| format!("No se pudo abrir el URL: {}", e))
+}
+
 /// Improvement (PDF nativo): write base64-encoded data (or a data-URI) to a file on disk.
 #[tauri::command]
 fn save_base64_to_file(path: String, base64_data: String) -> Result<(), String> {
@@ -584,6 +594,7 @@ pub fn run() {
             pick_save_path,
             save_base64_to_file,
             open_print_preview,
+            open_external_url,
             start_watching_folder,
             stop_watching_folder,
             list_folder_images,
