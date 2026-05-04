@@ -354,7 +354,8 @@ function setupExportToolbarHandlers() {
         png: () => exportPNG(),
         zip: () => exportAllZIP(),
         pdf: () => exportPDF(),
-        print: () => printAll()
+        print: () => printAll(),
+        preflight: () => runPreflightCheck()
     };
 
     document.querySelectorAll('[data-export-action]').forEach(button => {

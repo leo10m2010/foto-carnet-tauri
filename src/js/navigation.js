@@ -183,6 +183,45 @@ function resetZoom() {
     canvas.style.transform = 'scale(1)';
 }
 
+function setupAppControls() {
+    document.querySelectorAll('[data-nav-delta]').forEach(btn => {
+        if (btn.dataset.navBound === '1') return;
+        btn.dataset.navBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (btn.disabled) return;
+            navigateRecord(toInt(btn.dataset.navDelta, 0));
+        });
+    });
+
+    document.querySelectorAll('[data-zoom-delta]').forEach(btn => {
+        if (btn.dataset.zoomBound === '1') return;
+        btn.dataset.zoomBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            changeZoom(toFloat(btn.dataset.zoomDelta, 0));
+        });
+    });
+
+    document.querySelectorAll('[data-zoom-reset]').forEach(btn => {
+        if (btn.dataset.zoomBound === '1') return;
+        btn.dataset.zoomBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            resetZoom();
+        });
+    });
+
+    document.querySelectorAll('[data-app-action]').forEach(btn => {
+        if (btn.dataset.appBound === '1') return;
+        btn.dataset.appBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (btn.dataset.appAction === 'clear') clearAll();
+        });
+    });
+}
+
 // ===================== SECTION TOGGLE =====================
 
 const COLLAPSED_SECTIONS_KEY = 'collapsed-sections';

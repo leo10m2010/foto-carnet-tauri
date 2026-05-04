@@ -45,6 +45,18 @@ function setupRangeHistoryListener(elemId, snapshotName, sessionProp) {
 function setupHistoryControls() {
     setupRangeHistoryListener('hud-photo-zoom',     'photo-zoom-range',   'zoomSessionUntil');
     setupRangeHistoryListener('hud-photo-rotation', 'photo-rotate-range', 'rotationSessionUntil');
+
+    document.querySelectorAll('[data-history-action]').forEach(btn => {
+        if (btn.dataset.historyBound === '1') return;
+        btn.dataset.historyBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (btn.disabled) return;
+            if (btn.dataset.historyAction === 'undo') undoEdit();
+            if (btn.dataset.historyAction === 'redo') redoEdit();
+        });
+    });
+
     updateHistoryButtons();
 }
 

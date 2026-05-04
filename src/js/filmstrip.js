@@ -13,6 +13,23 @@ function initFilmstrip() {
     applyFilmstripVisibility(false);
 }
 
+function setupFilmstripControls() {
+    const handle = document.querySelector('[data-filmstrip-toggle]');
+    if (!handle || handle.dataset.filmstripBound === '1') return;
+    handle.dataset.filmstripBound = '1';
+
+    handle.addEventListener('click', (event) => {
+        event.preventDefault();
+        toggleFilmstrip();
+    });
+
+    handle.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        toggleFilmstrip();
+    });
+}
+
 function toggleFilmstrip() {
     state.filmstripVisible = !state.filmstripVisible;
     localStorage.setItem('filmstrip_visible', String(state.filmstripVisible));
@@ -28,6 +45,8 @@ function applyFilmstripVisibility(animate) {
     // Hide the whole bar when there are no records — nothing useful to show.
     const hasRecords = state.records && state.records.length > 0;
     bar.style.display = hasRecords ? '' : 'none';
+    const handle = document.querySelector('[data-filmstrip-toggle]');
+    if (handle) handle.setAttribute('aria-expanded', String(hasRecords && !!state.filmstripVisible));
     if (!hasRecords) return;
     if (!animate) bar.classList.add('no-transition');
     bar.classList.toggle('is-open', !!state.filmstripVisible);

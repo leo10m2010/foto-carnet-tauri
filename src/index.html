@@ -6,28 +6,7 @@
     <title>Generador Masivo de Carnets</title>
     <meta name="description" content="Genera carnets y credenciales en masa a partir de plantillas gráficas, datos CSV/Excel y fotos vinculadas por DNI.">
     <link rel="stylesheet" href="styles.css">
-    <!-- Tauri/WebView2: corrige el estirado del panel HUD en el renderer nativo -->
-    <style>
-        .editor-hud { max-width: min(520px, calc(100vw - 36px)) !important; }
-        .editor-hud-photo { width: 100%; overflow: hidden; }
-        .hud-section { min-width: 0; }
-        .hud-slider-row { min-width: 0; }
-        .hud-slider-row input[type="range"] { min-width: 0; width: 100%; }
-        .form-group input[type="number"],
-        .editor-hud input[type="number"] { max-width: 72px; min-width: 0; }
-        .hud-seg { flex-shrink: 1; min-width: 0; }
-        .editor-hud-actions { flex-wrap: wrap; }
-        /* Swatches: prevent stretch in WebView2 */
-        .editor-hud-swatches .swatch-btn {
-            flex-shrink: 0;
-            min-width: 20px; max-width: 20px;
-            min-height: 20px; max-height: 20px;
-        }
-        /* HUD collapse */
-        .editor-hud.hud-collapsed .editor-hud-photo,
-        .editor-hud.hud-collapsed .editor-hud-shortcuts,
-        .editor-hud.hud-collapsed .editor-hud-swatches { display: none !important; }
-    </style>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23182b48'/%3E%3Cpath d='M18 12h28a6 6 0 0 1 6 6v28a6 6 0 0 1-6 6H18a6 6 0 0 1-6-6V18a6 6 0 0 1 6-6z' fill='none' stroke='%2354a6ff' stroke-width='4'/%3E%3Ccircle cx='32' cy='28' r='8' fill='%2354a6ff'/%3E%3Cpath d='M18 48c3-8 9-12 14-12s11 4 14 12' fill='%2354a6ff'/%3E%3C/svg%3E">
     <!-- Offline libraries -->
     <script src="vendor/lucide/lucide.min.js"></script>
     <script src="vendor/jsbarcode/JsBarcode.all.min.js"></script>
@@ -120,9 +99,9 @@
                                     <input type="text" id="sidebar-apellidos" placeholder="Apellidos" autocomplete="off" style="width:100%;box-sizing:border-box;">
                                 </div>
                             </div>
-                            <div style="display:flex;gap:6px;margin-top:7px;">
-                                <button type="button" class="btn btn-primary" style="flex:1;font-size:0.73rem;padding:6px 8px;" onclick="commitSidebarNameEdit()"><i data-lucide="check" style="width:12px;height:12px;vertical-align:-2px;margin-right:3px;"></i>Aplicar</button>
-                                <button type="button" class="btn btn-secondary" style="font-size:0.73rem;padding:6px 10px;" onclick="cancelSidebarNameEdit()" title="Revertir cambios">↺</button>
+                            <div class="record-editor-actions">
+                                <button type="button" class="btn btn-primary record-editor-apply" data-record-editor-action="apply"><i data-lucide="check"></i>Aplicar</button>
+                                <button type="button" class="btn btn-secondary record-editor-reset" data-record-editor-action="cancel" title="Revertir cambios">↺</button>
                             </div>
                         </div>
                     </div>
@@ -141,16 +120,20 @@
                         <div class="token-field">
                             <input type="password" id="field-reniec-token"
                                 placeholder="Pega tu token de apisperu.com"
-                                oninput="localStorage.setItem('reniec-token',this.value.trim());updateReniecTokenStatus()">
-                            <button type="button" class="token-visibility-btn" onclick="toggleReniecTokenVisibility()" title="Mostrar u ocultar token" aria-label="Mostrar u ocultar token">
+                                data-reniec-token-input>
+                            <button type="button" class="token-visibility-btn" data-reniec-action="toggle-token" title="Mostrar u ocultar token" aria-label="Mostrar u ocultar token">
                                 <i data-lucide="eye" id="icon-toggle-token"></i>
                             </button>
                         </div>
                         <div class="token-actions">
-                            <p>Token gratuito en <strong>apisperu.com</strong> — se guarda localmente.</p>
+                            <p>Token gratuito en <strong>apisperu.com</strong> — puedes guardarlo localmente.</p>
+                            <label class="token-save-toggle" title="Si lo desactivas, el token solo se usa mientras la app siga abierta.">
+                                <input type="checkbox" id="reniec-token-persist" data-reniec-persist checked>
+                                Guardar token
+                            </label>
                             <div class="button-row">
-                                <button type="button" class="btn btn-primary btn-menu" id="btn-test-reniec" onclick="testReniecToken()" title="Consulta un DNI de prueba para verificar el token">Probar</button>
-                                <button type="button" class="btn btn-secondary btn-menu" onclick="clearReniecToken()">Limpiar</button>
+                                <button type="button" class="btn btn-primary btn-menu" id="btn-test-reniec" data-reniec-action="test-token" title="Consulta un DNI de prueba para verificar el token">Probar</button>
+                                <button type="button" class="btn btn-secondary btn-menu" data-reniec-action="clear-token">Limpiar</button>
                             </div>
                         </div>
                         <div id="reniec-test-result" class="inline-result"></div>
@@ -387,7 +370,7 @@
                                         </label>
                                     </div>
                                     <div class="form-group"><label>Color Fondo</label><input type="color" id="field-photo-bg-color" value="#d9dee8"></div>
-                                    <div class="form-group"><button type="button" class="btn btn-secondary" style="width:100%;padding:8px 10px;font-size:0.74rem;" onclick="autoPickPhotoBgColor()">Auto color</button></div>
+                                    <div class="form-group"><button type="button" class="btn btn-secondary btn-auto-color" data-photo-action="auto-bg-sidebar">Auto color</button></div>
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group"><label>Rotación (°)</label><input type="number" id="field-photo-rotation" value="0" step="90" min="-360" max="360"></div>
@@ -496,7 +479,7 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group form-group-full">
-                                <button type="button" class="btn btn-secondary btn-menu-full" onclick="runPreflightCheck()"><i data-lucide="shield-check"></i><span>Pre-chequeo antes de exportar</span></button>
+                                <button type="button" class="btn btn-secondary btn-menu-full" data-export-action="preflight"><i data-lucide="shield-check"></i><span>Pre-chequeo antes de exportar</span></button>
                             </div>
                         </div>
                         <div class="preflight-report" id="preflight-report" style="display:none;"></div>
@@ -512,28 +495,28 @@
             <div class="update-banner" id="update-banner" style="display:none;">
                 <i data-lucide="arrow-up-circle" style="width:14px;height:14px;flex-shrink:0;"></i>
                 <span id="update-banner-text">Nueva versión disponible</span>
-                <a id="update-banner-link" href="#" onclick="return false;" class="update-banner-link">Descargar</a>
-                <button type="button" class="update-banner-close" onclick="document.getElementById('update-banner').style.display='none'" title="Cerrar">✕</button>
+                <a id="update-banner-link" href="#" class="update-banner-link">Descargar</a>
+                <button type="button" class="update-banner-close" data-update-banner-close title="Cerrar">✕</button>
             </div>
 
             <!-- Toolbar -->
             <div class="toolbar">
                 <div class="toolbar-left">
                     <div class="nav-controls">
-                        <button class="nav-btn" id="btn-prev" onclick="navigateRecord(-1)" disabled title="Anterior" aria-label="Registro anterior"><i data-lucide="chevron-left" style="width:16px;height:16px;"></i></button>
+                        <button class="nav-btn" id="btn-prev" data-nav-delta="-1" disabled title="Anterior" aria-label="Registro anterior"><i data-lucide="chevron-left" style="width:16px;height:16px;"></i></button>
                         <div class="nav-info"><span id="current-index">0</span> / <span id="total-records">0</span></div>
-                        <button class="nav-btn" id="btn-next" onclick="navigateRecord(1)" disabled title="Siguiente" aria-label="Registro siguiente"><i data-lucide="chevron-right" style="width:16px;height:16px;"></i></button>
+                        <button class="nav-btn" id="btn-next" data-nav-delta="1" disabled title="Siguiente" aria-label="Registro siguiente"><i data-lucide="chevron-right" style="width:16px;height:16px;"></i></button>
                     </div>
                     <div class="zoom-controls">
-                        <button class="nav-btn" onclick="changeZoom(-0.1)" title="Alejar" aria-label="Alejar"><i data-lucide="minus" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" data-zoom-delta="-0.1" title="Alejar" aria-label="Alejar"><i data-lucide="minus" style="width:14px;height:14px;"></i></button>
                         <span class="zoom-level" id="zoom-level">100%</span>
-                        <button class="nav-btn" onclick="changeZoom(0.1)" title="Acercar" aria-label="Acercar"><i data-lucide="plus" style="width:14px;height:14px;"></i></button>
-                        <button class="nav-btn" onclick="resetZoom()" title="Zoom 100%" aria-label="Restablecer zoom a 100%"><i data-lucide="maximize-2" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" data-zoom-delta="0.1" title="Acercar" aria-label="Acercar"><i data-lucide="plus" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" data-zoom-reset title="Zoom 100%" aria-label="Restablecer zoom a 100%"><i data-lucide="maximize-2" style="width:14px;height:14px;"></i></button>
                     </div>
                     <div class="history-controls">
-                        <button class="nav-btn" id="btn-undo" onclick="undoEdit()" disabled title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><i data-lucide="undo-2" style="width:14px;height:14px;"></i></button>
-                        <button class="nav-btn" id="btn-redo" onclick="redoEdit()" disabled title="Rehacer (Ctrl+Y)" aria-label="Rehacer"><i data-lucide="redo-2" style="width:14px;height:14px;"></i></button>
-                        <button class="nav-btn" id="btn-help" onclick="openHelpModal()" title="Atajos de teclado (?)" aria-label="Ayuda"><i data-lucide="help-circle" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" id="btn-undo" data-history-action="undo" disabled title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><i data-lucide="undo-2" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" id="btn-redo" data-history-action="redo" disabled title="Rehacer (Ctrl+Y)" aria-label="Rehacer"><i data-lucide="redo-2" style="width:14px;height:14px;"></i></button>
+                        <button class="nav-btn" id="btn-help" data-help-action="open" title="Atajos de teclado (?)" aria-label="Ayuda"><i data-lucide="help-circle" style="width:14px;height:14px;"></i></button>
                     </div>
                 </div>
                 <div class="toolbar-right">
@@ -542,7 +525,7 @@
                     <button class="btn btn-primary btn-icon-text" id="btn-export-pdf" data-export-action="pdf" disabled title="Exportar PDF"><i data-lucide="file-text"></i><span>Exportar PDF</span></button>
                     <button class="btn btn-success btn-icon-text" id="btn-print" data-export-action="print" disabled title="Imprimir"><i data-lucide="printer"></i><span>Imprimir</span></button>
                     <div class="toolbar-divider"></div>
-                    <button class="btn btn-danger btn-icon-text" id="btn-clear" onclick="clearAll()" title="Eliminar todos los datos y empezar de cero"><i data-lucide="trash-2"></i><span>Limpiar</span></button>
+                    <button class="btn btn-danger btn-icon-text" id="btn-clear" data-app-action="clear" title="Eliminar todos los datos y empezar de cero"><i data-lucide="trash-2"></i><span>Limpiar</span></button>
                 </div>
             </div>
 
@@ -684,7 +667,7 @@
 
             <!-- Filmstrip Navigator -->
             <div class="filmstrip-bar" id="filmstrip-bar">
-                <div class="filmstrip-handle" onclick="toggleFilmstrip()">
+                <div class="filmstrip-handle" data-filmstrip-toggle role="button" tabindex="0" aria-controls="filmstrip-container" aria-expanded="true">
                     <i data-lucide="gallery-horizontal" style="width:13px;height:13px;vertical-align:-2px;margin-right:5px;flex-shrink:0;"></i>
                     <span>Tira de fotos</span>
                     <span class="filmstrip-count" id="filmstrip-count"></span>
@@ -709,7 +692,7 @@
                     <span id="status-export-stats" title="Exportaciones realizadas desde la instalación"></span>
                     <span class="status-credit">Creado por Renato Espinoza | Oficina de Comunicación e Imagen Institucional <span class="status-heart">&#10084;</span></span>
                 </div>
-                <button type="button" id="btn-check-updates" class="status-icon-btn" onclick="manualCheckForUpdates()" title="Buscar actualizaciones" aria-label="Buscar actualizaciones"><i data-lucide="refresh-cw"></i><span class="sr-only">Buscar actualizaciones</span></button>
+                <button type="button" id="btn-check-updates" class="status-icon-btn" data-update-check title="Buscar actualizaciones" aria-label="Buscar actualizaciones"><i data-lucide="refresh-cw"></i><span class="sr-only">Buscar actualizaciones</span></button>
             </div>
         </main>
     </div>
@@ -724,14 +707,14 @@
                 <div class="progress-fill" id="progress-fill"></div>
                 <span class="progress-percent" id="progress-percent">0%</span>
             </div>
-            <button type="button" class="btn btn-secondary modal-cancel-btn" id="modal-cancel-btn" onclick="cancelCurrentJob()" style="display:none;margin-top:12px;">Cancelar exportación</button>
+            <button type="button" class="btn btn-secondary modal-cancel-btn" id="modal-cancel-btn" data-modal-action="cancel-job" style="display:none;margin-top:12px;">Cancelar exportación</button>
         </div>
     </div>
 
     <!-- Help / Shortcuts Modal -->
-    <div class="modal-overlay" id="modal-help" onclick="if(event.target===this)closeHelpModal()">
+    <div class="modal-overlay" id="modal-help" data-help-overlay>
         <div class="modal-content help-modal">
-            <button type="button" class="help-close" onclick="closeHelpModal()" title="Cerrar (Esc)" aria-label="Cerrar">×</button>
+            <button type="button" class="help-close" data-help-action="close" title="Cerrar (Esc)" aria-label="Cerrar">×</button>
             <h3><i data-lucide="keyboard" style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;"></i>Atajos de teclado</h3>
             <div class="help-grid">
                 <div class="help-col">
@@ -787,11 +770,5 @@
     <script src="js/ui.js"></script>
     <script src="js/watcher.js"></script>
     <script src="js/init.js"></script>
-    <script>
-        // Initialize Lucide icons after DOM loads
-        document.addEventListener('DOMContentLoaded', () => {
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-        });
-    </script>
 </body>
 </html>

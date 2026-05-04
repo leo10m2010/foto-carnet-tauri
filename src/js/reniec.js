@@ -1,10 +1,78 @@
+const RENIEC_TOKEN_KEY = 'reniec-token';
+
+const reniecTokenStore = {
+    get() {
+        try {
+            return localStorage.getItem(RENIEC_TOKEN_KEY) || '';
+        } catch (_) {
+            return '';
+        }
+    },
+    set(token) {
+        try {
+            if (token) localStorage.setItem(RENIEC_TOKEN_KEY, token);
+            else localStorage.removeItem(RENIEC_TOKEN_KEY);
+        } catch (_) {}
+    },
+    clear() {
+        try {
+            localStorage.removeItem(RENIEC_TOKEN_KEY);
+        } catch (_) {}
+    }
+};
+
 function getReniecToken() {
-    return localStorage.getItem('reniec-token') ||
+    return reniecTokenStore.get() ||
         document.getElementById('field-reniec-token')?.value?.trim() || '';
 }
 
+function setupReniecControls() {
+    const tokenInput = document.getElementById('field-reniec-token');
+    const persistInput = document.getElementById('reniec-token-persist');
+
+    if (tokenInput && tokenInput.dataset.bound !== '1') {
+        tokenInput.dataset.bound = '1';
+        tokenInput.addEventListener('input', () => {
+            const token = tokenInput.value.trim();
+            if (persistInput?.checked !== false) {
+                reniecTokenStore.set(token);
+            } else {
+                reniecTokenStore.clear();
+            }
+            updateReniecTokenStatus();
+        });
+    }
+
+    if (persistInput && persistInput.dataset.bound !== '1') {
+        persistInput.dataset.bound = '1';
+        persistInput.addEventListener('change', () => {
+            const token = tokenInput?.value?.trim() || '';
+            if (persistInput.checked) {
+                reniecTokenStore.set(token);
+                showToast('Token RENIEC se guardara localmente', 'info');
+            } else {
+                reniecTokenStore.clear();
+                showToast('Token RENIEC no se guardara en este equipo', 'info');
+            }
+            updateReniecTokenStatus();
+        });
+    }
+
+    document.querySelectorAll('[data-reniec-action]').forEach(btn => {
+        if (btn.dataset.bound === '1') return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (btn.dataset.reniecAction === 'toggle-token') toggleReniecTokenVisibility();
+            if (btn.dataset.reniecAction === 'test-token') testReniecToken();
+            if (btn.dataset.reniecAction === 'clear-token') clearReniecToken();
+        });
+    });
+}
+
 function updateReniecTokenStatus() {
-    const token = localStorage.getItem('reniec-token') || '';
+    const token = getReniecToken();
     const statusEl = document.getElementById('reniec-token-status');
     const badgeEl  = document.getElementById('badge-reniec');
     if (statusEl) {
@@ -29,7 +97,7 @@ function toggleReniecTokenVisibility() {
 }
 
 function clearReniecToken() {
-    localStorage.removeItem('reniec-token');
+    reniecTokenStore.clear();
     const input = document.getElementById('field-reniec-token');
     if (input) input.value = '';
     updateReniecTokenStatus();

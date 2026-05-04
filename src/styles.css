@@ -2621,12 +2621,57 @@ select:focus {
   left: 16px;
   top: 14px;
   min-width: 320px;
+  max-width: min(520px, calc(100vw - 36px));
   border-radius: 12px;
   border: 1px solid #3d5f8d;
   background: linear-gradient(180deg, rgba(15, 30, 52, 0.95), rgba(12, 24, 43, 0.95));
   box-shadow: 0 14px 30px rgba(2, 7, 15, 0.5);
   backdrop-filter: blur(8px);
   padding: 11px;
+}
+
+.editor-hud-photo {
+  width: 100%;
+  overflow: hidden;
+}
+
+.hud-section,
+.hud-slider-row {
+  min-width: 0;
+}
+
+.hud-slider-row input[type="range"] {
+  min-width: 0;
+  width: 100%;
+}
+
+.form-group input[type="number"],
+.editor-hud input[type="number"] {
+  max-width: 72px;
+  min-width: 0;
+}
+
+.hud-seg {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.editor-hud-actions {
+  flex-wrap: wrap;
+}
+
+.editor-hud-swatches .swatch-btn {
+  flex-shrink: 0;
+  min-width: 20px;
+  max-width: 20px;
+  min-height: 20px;
+  max-height: 20px;
+}
+
+.editor-hud.hud-collapsed .editor-hud-photo,
+.editor-hud.hud-collapsed .editor-hud-shortcuts,
+.editor-hud.hud-collapsed .editor-hud-swatches {
+  display: none !important;
 }
 
 .editor-hud-top strong {
@@ -3082,6 +3127,35 @@ i[data-lucide] {
   min-height: 36px;
 }
 
+.record-editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.record-editor-apply {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 0.74rem;
+}
+
+.record-editor-apply i[data-lucide],
+.record-editor-apply svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+}
+
+.record-editor-reset {
+  flex: 0 0 42px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
 .photo-import-actions {
   gap: 10px;
   margin-top: 10px;
@@ -3230,6 +3304,36 @@ i[data-lucide] {
   line-height: 1.35;
 }
 
+.token-actions p {
+  grid-column: 1 / -1;
+}
+
+.token-save-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: max-content;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+}
+
+.token-save-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  accent-color: #54a6ff;
+}
+
+.token-actions .button-row {
+  grid-column: 2;
+  justify-self: end;
+}
+
 .button-row {
   display: inline-flex;
   align-items: center;
@@ -3243,6 +3347,14 @@ i[data-lucide] {
   padding: 7px 11px;
   font-size: 0.74rem;
   line-height: 1;
+}
+
+.btn-auto-color {
+  width: 100%;
+  min-height: 36px;
+  justify-content: center;
+  padding: 8px 10px;
+  font-size: 0.74rem;
 }
 
 .inline-result {

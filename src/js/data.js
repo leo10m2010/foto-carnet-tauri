@@ -149,8 +149,14 @@ function populateCSVMapping(columns, defaultDni, defaultExtra) {
         mapExtra.appendChild(opt2);
     });
 
-    mapDni.onchange = () => { remergeCSV(); };
-    mapExtra.onchange = () => { remergeCSV(); };
+    if (mapDni.dataset.mappingBound !== '1') {
+        mapDni.dataset.mappingBound = '1';
+        mapDni.addEventListener('change', () => remergeCSV());
+    }
+    if (mapExtra.dataset.mappingBound !== '1') {
+        mapExtra.dataset.mappingBound = '1';
+        mapExtra.addEventListener('change', () => remergeCSV());
+    }
 }
 
 function buildCSVIndex(dniColumn) {

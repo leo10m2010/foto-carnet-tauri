@@ -129,6 +129,28 @@ function setupEditorHudControls() {
     hudRotation?.addEventListener('input', () => setSelectedPhotoRotation(hudRotation.value));
 }
 
+function setupSidebarActionControls() {
+    document.querySelectorAll('[data-record-editor-action]').forEach(btn => {
+        if (btn.dataset.recordEditorBound === '1') return;
+        btn.dataset.recordEditorBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            const action = btn.dataset.recordEditorAction;
+            if (action === 'apply') commitSidebarNameEdit();
+            if (action === 'cancel') cancelSidebarNameEdit();
+        });
+    });
+
+    document.querySelectorAll('[data-photo-action]').forEach(btn => {
+        if (btn.dataset.photoBound === '1') return;
+        btn.dataset.photoBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (btn.dataset.photoAction === 'auto-bg-sidebar') autoPickPhotoBgColor();
+        });
+    });
+}
+
 function deselectCanvasElement() {
     state.drag.selectedId = null;
     state.drag.hoveredId = null;

@@ -56,6 +56,36 @@ function toggleHelpModal() {
     m.classList.toggle('active');
 }
 
+function setupModalControls() {
+    document.querySelectorAll('[data-modal-action]').forEach(btn => {
+        if (btn.dataset.modalBound === '1') return;
+        btn.dataset.modalBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (btn.dataset.modalAction === 'cancel-job') cancelCurrentJob();
+        });
+    });
+
+    document.querySelectorAll('[data-help-action]').forEach(btn => {
+        if (btn.dataset.helpBound === '1') return;
+        btn.dataset.helpBound = '1';
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            const action = btn.dataset.helpAction;
+            if (action === 'open') openHelpModal();
+            if (action === 'close') closeHelpModal();
+        });
+    });
+
+    document.querySelectorAll('[data-help-overlay]').forEach(overlay => {
+        if (overlay.dataset.helpBound === '1') return;
+        overlay.dataset.helpBound = '1';
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) closeHelpModal();
+        });
+    });
+}
+
 // ===================== EXPORT STATS =====================
 
 const EXPORT_STATS_KEY = 'export-stats';
@@ -134,4 +164,3 @@ function showToast(message, type = 'info') {
     const duration = type === 'error' ? Math.max(4000, message.length * 55) : 3000;
     setTimeout(() => dismissToast(toast), duration);
 }
-

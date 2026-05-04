@@ -1,21 +1,28 @@
 // ===================== INIT =====================
 
 document.addEventListener('DOMContentLoaded', async () => {
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+
     setupFileHandlers();
     setupLivePreview();
     setupCanvasDrag();
     initializeEditorState();
     setupHistoryControls();
     setupMenuHandlers();
+    setupAppControls();
+    setupSidebarActionControls();
+    setupReniecControls();
+    setupModalControls();
     setupKeyboardShortcuts();
     setupExportToolbarHandlers();
     initFilmstrip();
+    setupFilmstripControls();
     restoreCollapsedSections();
     applyFontPreviewToSelects();
     refreshExportStatsDisplay();
     const savedMode = localStorage.getItem('carnet-ui-mode') || 'simple';
     setUIMode(savedMode);
-    const savedToken = localStorage.getItem('reniec-token');
+    const savedToken = reniecTokenStore.get();
     if (savedToken) {
         const tokenInput = document.getElementById('field-reniec-token');
         if (tokenInput) tokenInput.value = savedToken;
@@ -23,6 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateReniecTokenStatus();
     setupFolderWatcher();
     await restoreSession();
+    setupUpdateControls();
     setupUpdateBanner();
 });
 
@@ -74,17 +82,50 @@ function setupUpdateBanner() {
         const link   = document.getElementById('update-banner-link');
         if (!banner || !text || !link) return;
         text.textContent = `Nueva versión v${version} disponible`;
-        link.onclick = (e) => {
-            e.preventDefault();
-            if (window.electronAPI?.openExternal) {
-                window.electronAPI.openExternal(url).catch(() => window.open(url, '_blank'));
-            } else {
-                window.open(url, '_blank');
-            }
-        };
+        link.dataset.updateUrl = url || '';
+        link.setAttribute('href', url || '#');
         banner.style.display = 'flex';
         if (typeof lucide !== 'undefined') lucide.createIcons();
     });
+}
+
+function openUpdateUrl(url) {
+    if (!url) return;
+    if (window.electronAPI?.openExternal) {
+        window.electronAPI.openExternal(url).catch(() => window.open(url, '_blank'));
+    } else {
+        window.open(url, '_blank');
+    }
+}
+
+function setupUpdateControls() {
+    const checkBtn = document.querySelector('[data-update-check]');
+    if (checkBtn && checkBtn.dataset.updateBound !== '1') {
+        checkBtn.dataset.updateBound = '1';
+        checkBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            manualCheckForUpdates();
+        });
+    }
+
+    const closeBtn = document.querySelector('[data-update-banner-close]');
+    if (closeBtn && closeBtn.dataset.updateBound !== '1') {
+        closeBtn.dataset.updateBound = '1';
+        closeBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            const banner = document.getElementById('update-banner');
+            if (banner) banner.style.display = 'none';
+        });
+    }
+
+    const link = document.getElementById('update-banner-link');
+    if (link && link.dataset.updateBound !== '1') {
+        link.dataset.updateBound = '1';
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            openUpdateUrl(link.dataset.updateUrl || link.getAttribute('href'));
+        });
+    }
 }
 
 window.addEventListener('beforeunload', () => {
