@@ -2,9 +2,17 @@
 // compatible con el resto del JS sin modificarlo.
 // Solo se activa dentro de Tauri (__TAURI__ existe).
 (function () {
-    if (!window.__TAURI__) return;
+    if (!window.__TAURI__) {
+        window.openFileInputById = (id) => document.getElementById(id)?.click();
+        return;
+    }
 
-    const invoke = window.__TAURI__.core.invoke;
+    const invoke = window.__TAURI__?.core?.invoke;
+    if (typeof invoke !== 'function') {
+        console.error('[Tauri] window.__TAURI__.core.invoke no está disponible; usando selectores web como fallback.');
+        window.openFileInputById = (id) => document.getElementById(id)?.click();
+        return;
+    }
 
     window.desktopMeta = { platform: 'win32', isElectron: false, isTauri: true };
 
@@ -137,15 +145,28 @@
         input.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
+    function reportPickerError(label, err) {
+        console.error(`[Tauri picker] Falló ${label}:`, err);
+        if (typeof showToast === 'function') {
+            showToast(`No se pudo abrir ${label}. Revisa permisos o prueba de nuevo.`, 'error');
+        }
+    }
+
     async function handleTemplateInput(input) {
-        const path = await invoke('pick_template_file').catch(() => null);
+        const path = await invoke('pick_template_file').catch(err => {
+            reportPickerError('el selector de plantilla', err);
+            return null;
+        });
         if (!path) return;
         const files = await pathsToFiles([path]);
         injectFilesIntoInput(input, files);
     }
 
     async function handlePhotosFilesInput(input) {
-        const paths = await invoke('pick_photo_files').catch(() => []);
+        const paths = await invoke('pick_photo_files').catch(err => {
+            reportPickerError('el selector de fotos', err);
+            return [];
+        });
         if (!paths.length) return;
         if (paths.length > 5 && typeof showToast === 'function')
             showToast(`Cargando ${paths.length} fotos…`, 'info');
@@ -154,7 +175,10 @@
     }
 
     async function handlePhotosFolderInput(input) {
-        const paths = await invoke('pick_photos_from_folder').catch(() => []);
+        const paths = await invoke('pick_photos_from_folder').catch(err => {
+            reportPickerError('el selector de carpeta', err);
+            return [];
+        });
         if (!paths.length) return;
         if (paths.length > 5 && typeof showToast === 'function')
             showToast(`Cargando ${paths.length} fotos…`, 'info');
@@ -163,7 +187,10 @@
     }
 
     async function handleDataInput(input) {
-        const path = await invoke('pick_data_file').catch(() => null);
+        const path = await invoke('pick_data_file').catch(err => {
+            reportPickerError('el selector de datos', err);
+            return null;
+        });
         if (!path) return;
         const files = await pathsToFiles([path]);
         injectFilesIntoInput(input, files);
@@ -176,18 +203,22 @@
         'input-data':          handleDataInput,
     };
 
-    window.addEventListener('DOMContentLoaded', () => {
-        Object.entries(INPUT_HANDLERS).forEach(([id, handler]) => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            // Capture phase: intercept BEFORE the browser's native file picker
-            el.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                handler(el);
-            }, true);
-        });
+    window.openFileInputById = async (id) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        const handler = INPUT_HANDLERS[id];
+        if (handler) {
+            try {
+                await handler(input);
+            } catch (err) {
+                reportPickerError('el selector de archivos', err);
+            }
+        } else {
+            input.click();
+        }
+    };
 
+    window.addEventListener('DOMContentLoaded', () => {
         // ── Tauri native drag-drop ────────────────────────────────────────────
         // The browser-level `drop` event gives us File objects without real paths
         // (so session restore can't find the photos later). Tauri emits a separate

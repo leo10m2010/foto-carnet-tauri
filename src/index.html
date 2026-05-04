@@ -40,38 +40,38 @@
                 <h1><i data-lucide="id-card" style="width:22px;height:22px;vertical-align:-4px;margin-right:6px;"></i>Generador de Carnets</h1>
                 <p class="subtitle">Combinación masiva de datos sobre plantilla</p>
                 <div class="ui-mode-toggle" role="group" aria-label="Modo de edición">
-                    <button type="button" id="btn-mode-simple" class="is-active" onclick="setUIMode('simple')">Simple</button>
-                    <button type="button" id="btn-mode-advanced" onclick="setUIMode('advanced')">Avanzado</button>
+                    <button type="button" id="btn-mode-simple" class="is-active" data-ui-mode="simple">Simple</button>
+                    <button type="button" id="btn-mode-advanced" data-ui-mode="advanced">Avanzado</button>
                 </div>
             </div>
             <div class="sidebar-content">
 
                 <!-- STEP 1: Template -->
                 <div class="config-section" id="section-template">
-                    <div class="section-header" onclick="toggleSection('section-template')">
+                    <div class="section-header" data-toggle-section="section-template">
                         <div class="step-badge" id="badge-template">1</div>
                         <h3>Plantilla de Fondo</h3>
                         <span class="toggle-icon">▼</span>
                     </div>
                     <div class="section-body">
-                        <div class="upload-zone" id="zone-template" onclick="document.getElementById('input-template').click()">
+                        <div class="upload-zone" id="zone-template" data-file-input="input-template">
                             <div class="upload-icon"><i data-lucide="image" style="width:32px;height:32px;color:var(--accent-1)"></i></div>
                             <div class="upload-text">Arrastra o <strong>selecciona</strong> la imagen de plantilla</div>
                             <div class="file-name" id="template-file-name"></div>
-                            <input type="file" id="input-template" accept="image/*">
+                            <input type="file" id="input-template" accept="image/*" hidden>
                         </div>
                     </div>
                 </div>
 
                 <!-- STEP 2: Photos (PRIMARY DATA SOURCE) -->
                 <div class="config-section" id="section-photos">
-                    <div class="section-header" onclick="toggleSection('section-photos')">
+                    <div class="section-header" data-toggle-section="section-photos">
                         <div class="step-badge" id="badge-photos">2</div>
                         <h3>Fotos y Datos</h3>
                         <span class="toggle-icon">▼</span>
                     </div>
                     <div class="section-body">
-                        <div class="upload-zone" id="zone-photos" onclick="document.getElementById('input-photos-files').click()">
+                        <div class="upload-zone" id="zone-photos" data-file-input="input-photos-files">
                             <div class="upload-icon"><i data-lucide="camera" style="width:32px;height:32px;color:var(--accent-1)"></i></div>
                             <div class="upload-text">Click para <strong>seleccionar las fotos</strong><br>
                                 <small style="color:var(--text-muted)">Formato: <strong>DNI - APELLIDOS NOMBRES.jpg</strong><br>Ej: 07971267 - CHACON VALDIVIESO JORGE LUIS.jpg</small>
@@ -80,12 +80,12 @@
                             <input type="file" id="input-photos-files" accept="image/*" multiple hidden>
                         </div>
                         <div class="photo-import-actions">
-                            <button type="button" class="btn btn-secondary btn-compact" onclick="document.getElementById('input-photos-files').click()" title="Seleccionar fotos"><i data-lucide="image-plus"></i><span>Seleccionar fotos</span></button>
-                            <button type="button" class="btn btn-secondary btn-compact" onclick="document.getElementById('input-photos-folder').click()" title="Seleccionar carpeta"><i data-lucide="folder-open"></i><span>Seleccionar carpeta</span></button>
+                            <button type="button" class="btn btn-secondary btn-compact" data-file-input="input-photos-files" title="Seleccionar fotos"><i data-lucide="image-plus"></i><span>Seleccionar fotos</span></button>
+                            <button type="button" class="btn btn-secondary btn-compact" data-file-input="input-photos-folder" title="Seleccionar carpeta"><i data-lucide="folder-open"></i><span>Seleccionar carpeta</span></button>
                             <input type="file" id="input-photos-folder" webkitdirectory hidden>
                         </div>
                         <div class="photo-watch-action">
-                            <button type="button" id="btn-watch-folder" class="btn btn-secondary btn-compact btn-watch-folder" onclick="toggleFolderWatcher()" title="Vincular carpeta para auto-importar"><i data-lucide="eye"></i><span>Vincular carpeta (auto-importar)</span></button>
+                            <button type="button" id="btn-watch-folder" class="btn btn-secondary btn-compact btn-watch-folder" data-watch-folder title="Vincular carpeta para auto-importar"><i data-lucide="eye"></i><span>Vincular carpeta (auto-importar)</span></button>
                         </div>
                         <div id="watched-folder-status" class="watched-folder-status"></div>
 
@@ -129,46 +129,44 @@
                 </div>
 
                 <!-- RENIEC Token -->
-                <div class="config-section collapsed" id="section-reniec">
-                    <div class="section-header" onclick="toggleSection('section-reniec')">
-                        <div class="step-badge" id="badge-reniec" style="background:var(--bg-card);border:1px solid var(--border-color);font-size:0.7rem;"><i data-lucide="shield-check" style="width:12px;height:12px;"></i></div>
-                        <h3>RENIEC <small style="font-weight:400;color:var(--text-muted);font-size:0.72rem">— verificación automática de nombres</small></h3>
-                        <span id="reniec-token-status" style="font-size:0.72rem;font-weight:600;color:#34d399;margin-left:auto;margin-right:8px;"></span>
+                <div class="config-section menu-section-reniec collapsed" id="section-reniec">
+                    <div class="section-header" data-toggle-section="section-reniec">
+                        <div class="step-badge" id="badge-reniec"><i data-lucide="shield-check"></i></div>
+                        <h3>RENIEC <small>— verificación automática de nombres</small></h3>
+                        <span id="reniec-token-status" class="section-status"></span>
                         <span class="toggle-icon">▼</span>
                     </div>
                     <div class="section-body">
-                        <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px;">Al cargar fotos con DNI de 8 dígitos, se consulta RENIEC automáticamente para corregir nombres y apellidos.</p>
-                        <div style="position:relative;">
+                        <p class="section-help">Al cargar fotos con DNI de 8 dígitos, se consulta RENIEC automáticamente para corregir nombres y apellidos.</p>
+                        <div class="token-field">
                             <input type="password" id="field-reniec-token"
                                 placeholder="Pega tu token de apisperu.com"
-                                style="width:100%;box-sizing:border-box;font-size:0.8rem;padding:6px 36px 6px 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-input);color:var(--text-primary);"
                                 oninput="localStorage.setItem('reniec-token',this.value.trim());updateReniecTokenStatus()">
-                            <button type="button" onclick="toggleReniecTokenVisibility()"
-                                style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);padding:2px 4px;line-height:1;">
-                                <i data-lucide="eye" id="icon-toggle-token" style="width:14px;height:14px;vertical-align:middle;"></i>
+                            <button type="button" class="token-visibility-btn" onclick="toggleReniecTokenVisibility()" title="Mostrar u ocultar token" aria-label="Mostrar u ocultar token">
+                                <i data-lucide="eye" id="icon-toggle-token"></i>
                             </button>
                         </div>
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;gap:8px;flex-wrap:wrap;">
-                            <p style="font-size:0.73rem;color:var(--text-muted);margin:0;flex:1;min-width:140px;">Token gratuito en <strong>apisperu.com</strong> — se guarda localmente.</p>
-                            <div style="display:flex;gap:6px;flex-shrink:0;">
-                                <button type="button" class="btn btn-primary" id="btn-test-reniec" onclick="testReniecToken()" style="font-size:0.72rem;padding:3px 8px;" title="Consulta un DNI de prueba para verificar el token">Probar</button>
-                                <button type="button" class="btn btn-secondary" onclick="clearReniecToken()" style="font-size:0.72rem;padding:3px 8px;">Limpiar</button>
+                        <div class="token-actions">
+                            <p>Token gratuito en <strong>apisperu.com</strong> — se guarda localmente.</p>
+                            <div class="button-row">
+                                <button type="button" class="btn btn-primary btn-menu" id="btn-test-reniec" onclick="testReniecToken()" title="Consulta un DNI de prueba para verificar el token">Probar</button>
+                                <button type="button" class="btn btn-secondary btn-menu" onclick="clearReniecToken()">Limpiar</button>
                             </div>
                         </div>
-                        <div id="reniec-test-result" style="margin-top:6px;font-size:0.73rem;"></div>
+                        <div id="reniec-test-result" class="inline-result"></div>
                     </div>
                 </div>
 
                 <!-- STEP 2b: CSV/Excel (OPTIONAL) -->
                 <div class="config-section collapsed advanced-only" id="section-data">
-                    <div class="section-header" onclick="toggleSection('section-data')">
+                    <div class="section-header" data-toggle-section="section-data">
                         <div class="step-badge" id="badge-data" style="background:var(--bg-card);border:1px solid var(--border-color);font-size:0.7rem;"><i data-lucide="settings" style="width:12px;height:12px;"></i></div>
                         <h3>CSV / Excel <small style="font-weight:400;color:var(--text-muted);font-size:0.72rem">— opcional, datos extra</small></h3>
                         <span class="toggle-icon">▼</span>
                     </div>
                     <div class="section-body">
                         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px;">Si necesitas campos adicionales (cargo, área, etc.) puedes cargar un CSV/Excel. Se vinculará por DNI con las fotos.</p>
-                        <div class="upload-zone" id="zone-data" onclick="document.getElementById('input-data').click()">
+                        <div class="upload-zone" id="zone-data" data-file-input="input-data">
                             <div class="upload-icon"><i data-lucide="file-spreadsheet" style="width:32px;height:32px;color:var(--accent-1)"></i></div>
                             <div class="upload-text">Arrastra o <strong>selecciona</strong> un archivo CSV o XLSX</div>
                             <div class="file-name" id="data-file-name"></div>
@@ -194,7 +192,7 @@
 
                 <!-- STEP 3: Field Positions -->
                 <div class="config-section advanced-only" id="section-fields">
-                    <div class="section-header" onclick="toggleSection('section-fields')">
+                    <div class="section-header" data-toggle-section="section-fields">
                         <div class="step-badge" id="badge-fields">3</div>
                         <h3>Posición de Campos <small style="font-weight:400;color:var(--text-muted);font-size:0.72rem">— arrastra en vista previa</small></h3>
                         <span class="toggle-icon">▼</span>
@@ -428,8 +426,8 @@
                 </div>
 
                 <!-- STEP 4: PDF Options -->
-                <div class="config-section collapsed" id="section-pdf">
-                    <div class="section-header" onclick="toggleSection('section-pdf')">
+                <div class="config-section menu-section-pdf collapsed" id="section-pdf">
+                    <div class="section-header" data-toggle-section="section-pdf">
                         <div class="step-badge" id="badge-pdf">4</div>
                         <h3>Opciones de Exportación</h3>
                         <span class="toggle-icon">▼</span>
@@ -460,7 +458,7 @@
                                 </select>
                             </div>
                         </div>
-                        <div class="form-row advanced-only">
+                        <div class="form-row form-row-three advanced-only">
                             <div class="form-group">
                                 <label>Margen (mm)</label>
                                 <input type="number" id="pdf-margin" value="10" min="0" max="50">
@@ -475,12 +473,12 @@
                             </div>
                         </div>
                         <div class="form-row advanced-only">
-                            <div class="form-group" style="max-width:none;">
-                                <label style="text-transform:none;letter-spacing:normal;display:flex;align-items:center;gap:6px;">
-                                    <input type="checkbox" id="pdf-cut-guides" checked style="width:auto;margin:0;">
+                            <div class="form-group form-group-full">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="pdf-cut-guides" checked>
                                     Mostrar líneas guía para corte
                                 </label>
-                                <small style="color:var(--text-muted)">Dibuja borde y marcas en esquinas alrededor de cada carnet.</small>
+                                <small>Dibuja borde y marcas en esquinas alrededor de cada carnet.</small>
                             </div>
                         </div>
                         <div class="form-row">
@@ -492,13 +490,13 @@
                                     <option value="600">Máxima (600 DPI)</option>
                                 </select>
                             </div>
-                            <div class="form-group" style="max-width:none;">
-                                <small style="color:var(--text-muted);display:block;margin-top:22px;">ZIP individual usará el tamaño del carnet configurado (por defecto 5.4 × 8.5 cm) y lo exportará en PNG sin pérdida.</small>
+                            <div class="form-group form-group-full">
+                                <small class="pdf-note">ZIP individual usará el tamaño del carnet configurado (por defecto 5.4 × 8.5 cm) y lo exportará en PNG sin pérdida.</small>
                             </div>
                         </div>
                         <div class="form-row">
-                            <div class="form-group" style="max-width:none;">
-                                <button type="button" class="btn btn-secondary" style="width:100%;" onclick="runPreflightCheck()"><i data-lucide="shield-check" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Pre-chequeo antes de exportar</button>
+                            <div class="form-group form-group-full">
+                                <button type="button" class="btn btn-secondary btn-menu-full" onclick="runPreflightCheck()"><i data-lucide="shield-check"></i><span>Pre-chequeo antes de exportar</span></button>
                             </div>
                         </div>
                         <div class="preflight-report" id="preflight-report" style="display:none;"></div>
@@ -539,12 +537,12 @@
                     </div>
                 </div>
                 <div class="toolbar-right">
-                    <button class="btn btn-secondary" id="btn-export-png" onclick="exportPNG()" disabled><i data-lucide="image-down" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>PNG</button>
-                    <button class="btn btn-secondary" id="btn-export-zip" onclick="exportAllZIP()" disabled><i data-lucide="archive" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>ZIP Individual</button>
-                    <button class="btn btn-primary" id="btn-export-pdf" onclick="exportPDF()" disabled><i data-lucide="file-text" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Exportar PDF</button>
-                    <button class="btn btn-success" id="btn-print" onclick="printAll()" disabled><i data-lucide="printer" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Imprimir</button>
+                    <button class="btn btn-secondary btn-icon-text" id="btn-export-png" onclick="exportPNG()" disabled title="Exportar PNG"><i data-lucide="image-down"></i><span>PNG</span></button>
+                    <button class="btn btn-secondary btn-icon-text" id="btn-export-zip" onclick="exportAllZIP()" disabled title="Exportar ZIP individual"><i data-lucide="archive"></i><span>ZIP Individual</span></button>
+                    <button class="btn btn-primary btn-icon-text" id="btn-export-pdf" onclick="exportPDF()" disabled title="Exportar PDF"><i data-lucide="file-text"></i><span>Exportar PDF</span></button>
+                    <button class="btn btn-success btn-icon-text" id="btn-print" onclick="printAll()" disabled title="Imprimir"><i data-lucide="printer"></i><span>Imprimir</span></button>
                     <div class="toolbar-divider"></div>
-                    <button class="btn btn-danger" id="btn-clear" onclick="clearAll()" title="Eliminar todos los datos y empezar de cero"><i data-lucide="trash-2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Limpiar</button>
+                    <button class="btn btn-danger btn-icon-text" id="btn-clear" onclick="clearAll()" title="Eliminar todos los datos y empezar de cero"><i data-lucide="trash-2"></i><span>Limpiar</span></button>
                 </div>
             </div>
 
@@ -569,17 +567,17 @@
                             <strong id="editor-hud-name">Sin selección</strong>
                             <span id="editor-hud-details">Haz clic sobre un elemento para editar</span>
                         </div>
-                        <button type="button" class="hud-collapse-btn" id="hud-collapse-btn" onclick="toggleHudCollapse()" title="Expandir / Colapsar controles">
-                            <i data-lucide="chevron-up" id="hud-collapse-icon" style="width:13px;height:13px;"></i>
+                        <button type="button" class="hud-collapse-btn" id="hud-collapse-btn" data-hud-control="collapse" title="Expandir / Colapsar controles">
+                            <i data-lucide="chevron-up" id="hud-collapse-icon"></i>
                         </button>
-                        <button type="button" class="hud-close-btn" onclick="state.drag.selectedId = null; tryRender(); updateEditorHud();" title="Deseleccionar (Esc)">✕</button>
+                        <button type="button" class="hud-close-btn" data-hud-control="close" title="Deseleccionar (Esc)">✕</button>
                     </div>
 
                     <!-- Crop mode: collapses HUD to minimal indicator -->
                     <div class="editor-hud-crop-overlay" id="editor-hud-crop-overlay">
                         <i data-lucide="move" class="hud-hero-icon"></i>
                         <span>Arrastra la foto para reencuadrar</span>
-                        <button type="button" onclick="setPhotoCropMode(false)">✓ Listo</button>
+                        <button type="button" data-hud-control="crop-done">✓ Listo</button>
                     </div>
 
                     <!-- Position / align actions -->
@@ -587,10 +585,10 @@
                         <span class="hud-section-label"><i data-lucide="move" class="hud-section-icon"></i>Posición</span>
                         <div class="hud-actions-row">
                             <div class="hud-seg">
-                                <button type="button" onclick="alignSelectedElement('x')" disabled title="Centrar horizontalmente (X)">⊕ X</button>
-                                <button type="button" onclick="alignSelectedElement('y')" disabled title="Centrar verticalmente (Y)">⊕ Y</button>
+                                <button type="button" data-hud-action="align-x" disabled title="Centrar horizontalmente (X)">⊕ X</button>
+                                <button type="button" data-hud-action="align-y" disabled title="Centrar verticalmente (Y)">⊕ Y</button>
                             </div>
-                            <button type="button" class="hud-text-btn" onclick="resetSelectedElement()" disabled title="Restablecer valores originales (R)">
+                            <button type="button" class="hud-text-btn" data-hud-action="reset" disabled title="Restablecer valores originales (R)">
                                 <i data-lucide="rotate-ccw" class="hud-hero-icon"></i>
                                 Restablecer
                             </button>
@@ -603,12 +601,12 @@
                         <div class="editor-hud-individual-overlay" id="editor-hud-individual-overlay">
                             <i data-lucide="user-check" class="hud-hero-icon"></i>
                             <span>Solo este registro</span>
-                            <button type="button" onclick="togglePhotoIndividualFromHud(false)">✕ Desactivar</button>
+                            <button type="button" data-hud-photo-action="individual-off">✕ Desactivar</button>
                         </div>
 
                         <!-- Individual toggle -->
                         <label class="hud-hero-toggle" title="Ajuste individual para este registro (I)">
-                            <input type="checkbox" id="hud-photo-individual" onchange="togglePhotoIndividualFromHud(this.checked)" disabled>
+                            <input type="checkbox" id="hud-photo-individual" data-hud-photo-input="individual" disabled>
                             <i data-lucide="user-check" class="hud-hero-icon"></i>
                             Ajuste individual
                             <span class="hud-individual-badge">●</span>
@@ -618,16 +616,16 @@
                         <div class="hud-section">
                             <span class="hud-section-label"><i data-lucide="droplets" class="hud-section-icon"></i>Fondo</span>
                             <div class="hud-bg-row">
-                                <button type="button" class="hud-hero-btn" id="hud-gotero-btn" onclick="startPhotoColorPick()" disabled title="Tomar color de fondo desde la foto (G)">
+                                <button type="button" class="hud-hero-btn" id="hud-gotero-btn" data-hud-photo-action="gotero" disabled title="Tomar color de fondo desde la foto (G)">
                                     <i data-lucide="pipette" class="hud-hero-icon"></i>
                                     Gotero
                                 </button>
-                                <button type="button" class="hud-auto-pill" onclick="autoPickPhotoBgColor()" disabled title="Detectar color de fondo automáticamente">Auto</button>
+                                <button type="button" class="hud-auto-pill" data-hud-photo-action="auto-bg" disabled title="Detectar color de fondo automáticamente">Auto</button>
                                 <label class="hud-fondo-toggle" title="Activar fondo de color">
-                                    <input type="checkbox" id="hud-photo-bg-enable" onchange="togglePhotoBgFromHud(this.checked)" disabled>
+                                    <input type="checkbox" id="hud-photo-bg-enable" data-hud-photo-input="bg-enable" disabled>
                                     Fondo
                                 </label>
-                                <input type="color" id="hud-photo-bg-color" class="hud-bg-color" value="#d9dee8" onchange="setPhotoBgColor(this.value)" title="Color de fondo" disabled>
+                                <input type="color" id="hud-photo-bg-color" class="hud-bg-color" value="#d9dee8" data-hud-photo-input="bg-color" title="Color de fondo" disabled>
                             </div>
                             <div class="editor-hud-swatches" id="editor-hud-swatches"></div>
                         </div>
@@ -637,34 +635,34 @@
                             <span class="hud-section-label"><i data-lucide="frame" class="hud-section-icon"></i>Encuadre</span>
                             <div class="hud-encuadre-row">
                                 <div class="hud-seg">
-                                    <button type="button" id="hud-fit-cover" onclick="setPhotoFitMode('cover')" disabled title="Rellenar el marco completo">Rellenar</button>
-                                    <button type="button" id="hud-fit-contain" onclick="setPhotoFitMode('contain')" disabled title="Encajar sin recortar">Encajar</button>
+                                    <button type="button" id="hud-fit-cover" data-hud-photo-action="fit-cover" disabled title="Rellenar el marco completo">Rellenar</button>
+                                    <button type="button" id="hud-fit-contain" data-hud-photo-action="fit-contain" disabled title="Encajar sin recortar">Encajar</button>
                                 </div>
-                                <button type="button" id="hud-crop-mode" onclick="togglePhotoCropMode()" disabled title="Mover la foto dentro del marco (C)" class="hud-text-btn">
+                                <button type="button" id="hud-crop-mode" data-hud-photo-action="crop" disabled title="Mover la foto dentro del marco (C)" class="hud-text-btn">
                                     <i data-lucide="crop" class="hud-hero-icon"></i>
                                     Mover
                                 </button>
-                                <button type="button" onclick="autoFrameCurrentPhoto()" disabled title="Detectar y centrar rostro" class="hud-icon-btn">
+                                <button type="button" data-hud-photo-action="auto-frame" disabled title="Detectar y centrar rostro" class="hud-icon-btn">
                                     <i data-lucide="scan-face" class="hud-hero-icon"></i>
                                 </button>
-                                <button type="button" onclick="resetSelectedPhotoCrop()" disabled title="Restablecer encuadre" class="hud-icon-btn">
+                                <button type="button" data-hud-photo-action="reset-crop" disabled title="Restablecer encuadre" class="hud-icon-btn">
                                     <i data-lucide="rotate-ccw" class="hud-hero-icon"></i>
                                 </button>
                             </div>
                             <!-- Zoom slider -->
                             <div class="hud-slider-row">
                                 <span class="hud-slider-label">Zoom</span>
-                                <input type="range" id="hud-photo-zoom" min="0.20" max="5.00" step="0.05" value="1.00" oninput="setSelectedPhotoZoom(this.value)" disabled>
+                                <input type="range" id="hud-photo-zoom" min="0.20" max="5.00" step="0.05" value="1.00" data-hud-photo-input="zoom" disabled>
                                 <strong id="hud-photo-zoom-value" class="hud-slider-value hud-value-pill">1.00×</strong>
                             </div>
                             <!-- Rotation slider -->
                             <div class="hud-slider-row">
                                 <span class="hud-slider-label">Ángulo</span>
-                                <button type="button" id="hud-rotate-ccw" onclick="rotatePhoto(-90)" disabled title="−90° (Alt+[)" class="hud-slider-step-btn">↺</button>
-                                <input type="range" id="hud-photo-rotation" min="-180" max="180" step="1" value="0" oninput="setSelectedPhotoRotation(this.value)" disabled title="[ ] ±90° · { } ±1° · Alt+[ ] ±45°">
-                                <button type="button" id="hud-rotate-cw" onclick="rotatePhoto(90)" disabled title="+90° (Alt+])" class="hud-slider-step-btn">↻</button>
+                                <button type="button" id="hud-rotate-ccw" data-hud-photo-action="rotate-ccw" disabled title="−90° (Alt+[)" class="hud-slider-step-btn">↺</button>
+                                <input type="range" id="hud-photo-rotation" min="-180" max="180" step="1" value="0" data-hud-photo-input="rotation" disabled title="[ ] ±90° · { } ±1° · Alt+[ ] ±45°">
+                                <button type="button" id="hud-rotate-cw" data-hud-photo-action="rotate-cw" disabled title="+90° (Alt+])" class="hud-slider-step-btn">↻</button>
                                 <strong id="hud-rotation-value" class="hud-slider-value hud-value-pill">0°</strong>
-                                <button type="button" id="hud-rotate-reset" onclick="rotatePhoto(0, true)" disabled title="Restablecer ángulo" class="hud-icon-btn hud-icon-btn--xs">✕</button>
+                                <button type="button" id="hud-rotate-reset" data-hud-photo-action="rotate-reset" disabled title="Restablecer ángulo" class="hud-icon-btn hud-icon-btn--xs">✕</button>
                             </div>
                         </div>
                     </div>
@@ -705,13 +703,13 @@
                         <span id="status-text">Sin datos cargados</span>
                     </div>
                 </div>
-                <div>
-                    <span id="status-template">Plantilla: —</span> &nbsp;|&nbsp;
-                    <span id="status-dimensions">—</span> &nbsp;|&nbsp;
-                    <span id="status-export-stats" title="Exportaciones realizadas desde la instalación" style="color:var(--text-muted);"></span> &nbsp;|&nbsp;
-                    <button type="button" id="btn-check-updates" onclick="manualCheckForUpdates()" title="Buscar actualizaciones" style="background:none;border:none;padding:0;cursor:pointer;color:var(--text-muted);font-size:0.75rem;font-family:inherit;transition:color 0.15s;" onmouseover="this.style.color='var(--text-secondary)'" onmouseout="this.style.color='var(--text-muted)'"><i data-lucide="refresh-cw" style="width:11px;height:11px;vertical-align:-1px;margin-right:3px;"></i>Buscar actualizaciones</button> &nbsp;|&nbsp;
-                    <span>Creado por Renato Espinoza | Oficina de Comunicación e Imagen Institucional <span style="color:#ef4444;">&#10084;</span></span>
+                <div class="status-meta">
+                    <span id="status-template">Plantilla: —</span>
+                    <span id="status-dimensions">—</span>
+                    <span id="status-export-stats" title="Exportaciones realizadas desde la instalación"></span>
+                    <span class="status-credit">Creado por Renato Espinoza | Oficina de Comunicación e Imagen Institucional <span class="status-heart">&#10084;</span></span>
                 </div>
+                <button type="button" id="btn-check-updates" class="status-icon-btn" onclick="manualCheckForUpdates()" title="Buscar actualizaciones" aria-label="Buscar actualizaciones"><i data-lucide="refresh-cw"></i><span class="sr-only">Buscar actualizaciones</span></button>
             </div>
         </main>
     </div>

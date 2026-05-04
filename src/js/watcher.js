@@ -6,6 +6,14 @@
 let _watcherUnsubscribe = null;
 
 function setupFolderWatcher() {
+    document.querySelectorAll('[data-watch-folder]').forEach(btn => {
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleFolderWatcher();
+        });
+    });
+
     if (!window.electronAPI?.onWatchedFolderChange) return;
 
     // Suscripción única al evento — los paths llegan agrupados por debounce.
@@ -28,7 +36,11 @@ async function pickAndStartWatchingFolder() {
         showToast('Esta función requiere la versión escritorio (Tauri).', 'warning');
         return;
     }
-    const path = await window.electronAPI.pickFolder().catch(() => null);
+    const path = await window.electronAPI.pickFolder().catch((err) => {
+        console.error('[watcher] No se pudo abrir el selector de carpeta:', err);
+        showToast('No se pudo abrir el selector de carpeta.', 'error');
+        return null;
+    });
     if (!path) return;
     await startWatchingFolder(path);
 }

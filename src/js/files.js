@@ -3,6 +3,7 @@ function setupFileHandlers() {
     document.getElementById('input-photos-files').addEventListener('change', handlePhotosUpload);
     document.getElementById('input-photos-folder').addEventListener('change', handlePhotosUpload);
     document.getElementById('input-data').addEventListener('change', handleDataUpload);
+    setupFilePickerControls();
 
     // Drag-and-drop for upload zones
     ['zone-template', 'zone-photos', 'zone-data'].forEach(id => {
@@ -34,6 +35,22 @@ function setupFileHandlers() {
             if (e.dataTransfer.files.length > 0) {
                 input.files = e.dataTransfer.files;
                 input.dispatchEvent(new Event('change'));
+            }
+        });
+    });
+}
+
+function setupFilePickerControls() {
+    document.querySelectorAll('[data-file-input]').forEach(control => {
+        control.addEventListener('click', (event) => {
+            const inputId = control.dataset.fileInput;
+            if (!inputId) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof window.openFileInputById === 'function') {
+                window.openFileInputById(inputId);
+            } else {
+                document.getElementById(inputId)?.click();
             }
         });
     });
@@ -232,4 +249,3 @@ function handlePhotosUpload(e) {
 }
 
 // ---- RENIEC API enrichment (runs automatically, no UI controls) ----
-

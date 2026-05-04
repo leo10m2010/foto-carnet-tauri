@@ -204,6 +204,20 @@ function toggleSection(sectionId) {
     persistCollapsedSections();
 }
 
+function setupMenuHandlers() {
+    document.querySelectorAll('[data-ui-mode]').forEach(btn => {
+        btn.addEventListener('click', () => setUIMode(btn.dataset.uiMode || 'simple'));
+    });
+
+    document.querySelectorAll('[data-toggle-section]').forEach(header => {
+        header.addEventListener('click', (event) => {
+            const interactive = event.target.closest('button, input, select, textarea, a, label');
+            if (interactive) return;
+            toggleSection(header.dataset.toggleSection);
+        });
+    });
+}
+
 function restoreCollapsedSections() {
     const saved = getCollapsedSectionSet();
     if (saved.size === 0 && localStorage.getItem(COLLAPSED_SECTIONS_KEY) === null) return; // first run: respect HTML defaults
@@ -212,4 +226,3 @@ function restoreCollapsedSections() {
         section.classList.toggle('collapsed', saved.has(section.id));
     });
 }
-

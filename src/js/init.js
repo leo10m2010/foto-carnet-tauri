@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupCanvasDrag();
     initializeEditorState();
     setupHistoryControls();
+    setupMenuHandlers();
     setupKeyboardShortcuts();
     initFilmstrip();
     restoreCollapsedSections();
@@ -33,13 +34,15 @@ function manualCheckForUpdates() {
     function resetBtn() {
         if (!btn) return;
         btn.disabled = false;
-        btn.innerHTML = '<i data-lucide="refresh-cw" style="width:11px;height:11px;vertical-align:-1px;margin-right:3px;"></i>Buscar actualizaciones';
+        btn.classList.remove('is-checking');
+        btn.innerHTML = '<i data-lucide="refresh-cw"></i><span class="sr-only">Buscar actualizaciones</span>';
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<i data-lucide="refresh-cw" style="width:11px;height:11px;vertical-align:-1px;margin-right:3px;"></i>Buscando…';
+        btn.classList.add('is-checking');
+        btn.innerHTML = '<i data-lucide="refresh-cw"></i><span class="sr-only">Buscando actualizaciones</span>';
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 

@@ -22,6 +22,123 @@ function setupCanvasDrag() {
         onCanvasMouseMove({ clientX: t.clientX, clientY: t.clientY });
     }, { passive: false });
     canvas.addEventListener('touchend', () => onCanvasMouseUp());
+    setupEditorHudControls();
+}
+
+function setupEditorHudControls() {
+    const hud = document.getElementById('editor-hud');
+    if (!hud || hud.dataset.bound === '1') return;
+    hud.dataset.bound = '1';
+
+    hud.querySelectorAll('[data-hud-control]').forEach(control => {
+        control.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            switch (control.dataset.hudControl) {
+                case 'collapse':
+                    toggleHudCollapse();
+                    break;
+                case 'close':
+                    deselectCanvasElement();
+                    break;
+                case 'crop-done':
+                    setPhotoCropMode(false);
+                    break;
+            }
+        });
+    });
+
+    hud.querySelectorAll('[data-hud-action]').forEach(control => {
+        control.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (control.disabled) return;
+
+            switch (control.dataset.hudAction) {
+                case 'align-x':
+                    alignSelectedElement('x');
+                    break;
+                case 'align-y':
+                    alignSelectedElement('y');
+                    break;
+                case 'reset':
+                    resetSelectedElement();
+                    break;
+            }
+        });
+    });
+
+    hud.querySelectorAll('[data-hud-photo-action]').forEach(control => {
+        control.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (control.disabled) return;
+
+            switch (control.dataset.hudPhotoAction) {
+                case 'individual-off':
+                    togglePhotoIndividualFromHud(false);
+                    break;
+                case 'gotero':
+                    startPhotoColorPick();
+                    break;
+                case 'auto-bg':
+                    autoPickPhotoBgColor();
+                    break;
+                case 'fit-cover':
+                    setPhotoFitMode('cover');
+                    break;
+                case 'fit-contain':
+                    setPhotoFitMode('contain');
+                    break;
+                case 'crop':
+                    togglePhotoCropMode();
+                    break;
+                case 'auto-frame':
+                    autoFrameCurrentPhoto();
+                    break;
+                case 'reset-crop':
+                    resetSelectedPhotoCrop();
+                    break;
+                case 'rotate-ccw':
+                    rotatePhoto(-90);
+                    break;
+                case 'rotate-cw':
+                    rotatePhoto(90);
+                    break;
+                case 'rotate-reset':
+                    rotatePhoto(0, true);
+                    break;
+            }
+        });
+    });
+
+    const hudIndividual = document.getElementById('hud-photo-individual');
+    hudIndividual?.addEventListener('change', () => togglePhotoIndividualFromHud(hudIndividual.checked));
+
+    const hudBgEnable = document.getElementById('hud-photo-bg-enable');
+    hudBgEnable?.addEventListener('change', () => togglePhotoBgFromHud(hudBgEnable.checked));
+
+    const hudBgColor = document.getElementById('hud-photo-bg-color');
+    hudBgColor?.addEventListener('change', () => setPhotoBgColor(hudBgColor.value));
+
+    const hudZoom = document.getElementById('hud-photo-zoom');
+    hudZoom?.addEventListener('input', () => setSelectedPhotoZoom(hudZoom.value));
+
+    const hudRotation = document.getElementById('hud-photo-rotation');
+    hudRotation?.addEventListener('input', () => setSelectedPhotoRotation(hudRotation.value));
+}
+
+function deselectCanvasElement() {
+    state.drag.selectedId = null;
+    state.drag.hoveredId = null;
+    state.drag.active = false;
+    state.drag.photoPanActive = false;
+    state.drag.resizeHandle = null;
+    if (state.photoColorPicker.active) stopPhotoColorPickMode();
+    if (state.photoCropMode.active) setPhotoCropMode(false);
+    tryRender();
+    updateEditorHud();
 }
 
 function getCanvasCoords(e) {
@@ -1019,7 +1136,7 @@ function updateEditorHud() {
     if (!hud) return;
 
     const hasRenderableData = !!state.templateImage && state.records.length > 0;
-    const actionButtons = hud.querySelectorAll('button');
+    const actionButtons = hud.querySelectorAll('[data-hud-action]');
     const photoControls = document.getElementById('editor-hud-photo');
     const swatches = document.getElementById('editor-hud-swatches');
     const hudIndividual = document.getElementById('hud-photo-individual');
@@ -1033,7 +1150,7 @@ function updateEditorHud() {
     const detailsEl = document.getElementById('editor-hud-details');
     const setPhotoHudDisabled = (disabled) => {
         if (photoControls) {
-            photoControls.querySelectorAll('button').forEach(btn => { btn.disabled = disabled; });
+            photoControls.querySelectorAll('[data-hud-photo-action]').forEach(btn => { btn.disabled = disabled; });
         }
         if (swatches) {
             swatches.querySelectorAll('button').forEach(btn => { btn.disabled = disabled; });
@@ -1117,4 +1234,3 @@ function updateEditorHud() {
         }
     }
 }
-
