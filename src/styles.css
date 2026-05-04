@@ -354,6 +354,73 @@ body.ui-mode-simple .advanced-only {
   display: none;
 }
 
+input[type="file"][hidden],
+.sidebar input[type="file"] {
+  display: none !important;
+}
+
+.photo-import-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.photo-watch-action {
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.btn-compact {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  padding: 7px 9px;
+  font-size: 0.75rem;
+  line-height: 1.1;
+}
+
+.btn-compact i[data-lucide],
+.btn-compact svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+.btn-compact span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-watch-folder {
+  justify-content: flex-start;
+}
+
+.watched-folder-status {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.watched-folder-status > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ===== FORM CONTROLS ===== */
 
 .form-group {
@@ -464,8 +531,10 @@ input[type="color"] {
 
 .data-stats {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 12px;
+  min-width: 0;
 }
 
 .stat-chip {
@@ -479,10 +548,18 @@ input[type="color"] {
   display: flex;
   align-items: center;
   gap: 5px;
+  flex: 1 1 calc(50% - 5px);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .stat-chip .stat-value {
   color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- RENIEC table indicators ---- */
@@ -509,7 +586,8 @@ td.reniec-fixed-cell::after {
 
 .data-table-wrapper {
   max-height: 160px;
-  overflow-y: auto;
+  max-width: 100%;
+  overflow: auto;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   scrollbar-width: thin;
@@ -518,8 +596,10 @@ td.reniec-fixed-cell::after {
 
 .data-table {
   width: 100%;
+  min-width: 0;
   border-collapse: collapse;
   font-size: 0.75rem;
+  table-layout: fixed;
 }
 
 .data-table th {
@@ -533,12 +613,18 @@ td.reniec-fixed-cell::after {
   position: sticky;
   top: 0;
   z-index: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .data-table td {
   padding: 6px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .data-table tr:hover td {
@@ -743,6 +829,7 @@ td.reniec-fixed-cell::after {
   white-space: nowrap;
   position: relative;
   overflow: hidden;
+  min-width: 0;
 }
 
 .btn::before {
@@ -1850,21 +1937,49 @@ td.reniec-fixed-cell::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   font-size: 0.75rem;
   color: var(--text-muted);
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .status-left {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .status-indicator {
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+}
+
+.status-bar > div:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#status-text,
+#status-template,
+#status-dimensions,
+#status-export-stats {
+  min-width: 0;
+}
+
+#btn-check-updates {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .status-dot {
@@ -2682,6 +2797,24 @@ select:focus {
   padding: 8px 18px;
   background: rgba(12, 20, 36, 0.96);
   border-top: 1px solid #28405f;
+}
+
+.photo-import-actions {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.btn.btn-compact {
+  min-height: 34px;
+  padding: 7px 9px;
+  font-size: 0.75rem;
+}
+
+.btn-watch-folder {
+  justify-content: flex-start;
+}
+
+.stat-chip {
+  min-width: 0;
 }
 
 .modal-overlay {

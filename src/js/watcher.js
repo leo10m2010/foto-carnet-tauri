@@ -82,7 +82,7 @@ function updateWatcherUI() {
     if (!btn) return;
 
     if (state.watchedFolderPath) {
-        btn.innerHTML = '<i data-lucide="eye-off" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Detener vigilancia';
+        btn.innerHTML = '<i data-lucide="eye-off"></i><span>Detener vigilancia</span>';
         btn.classList.add('btn-watching');
         if (status) {
             const shortPath = _shortenPath(state.watchedFolderPath, 50);
@@ -90,7 +90,7 @@ function updateWatcherUI() {
             status.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#34d399;box-shadow:0 0 6px #34d399;"></span> <span title="${state.watchedFolderPath}">Vigilando: <strong>${shortPath}</strong></span>`;
         }
     } else {
-        btn.innerHTML = '<i data-lucide="eye" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Vincular carpeta (auto-importar)';
+        btn.innerHTML = '<i data-lucide="eye"></i><span>Vincular carpeta (auto-importar)</span>';
         btn.classList.remove('btn-watching');
         if (status) status.style.display = 'none';
     }

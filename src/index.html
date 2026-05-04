@@ -77,17 +77,17 @@
                                 <small style="color:var(--text-muted)">Formato: <strong>DNI - APELLIDOS NOMBRES.jpg</strong><br>Ej: 07971267 - CHACON VALDIVIESO JORGE LUIS.jpg</small>
                             </div>
                             <div class="file-name" id="photos-file-name"></div>
-                            <input type="file" id="input-photos-files" accept="image/*" multiple style="display:none">
+                            <input type="file" id="input-photos-files" accept="image/*" multiple hidden>
                         </div>
-                        <div style="display:flex;gap:6px;margin-top:8px;">
-                            <button type="button" class="btn btn-secondary" style="flex:1;font-size:0.75rem;padding:7px 10px;" onclick="document.getElementById('input-photos-files').click()"><i data-lucide="image-plus" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Seleccionar fotos</button>
-                            <button type="button" class="btn btn-secondary" style="flex:1;font-size:0.75rem;padding:7px 10px;" onclick="document.getElementById('input-photos-folder').click()"><i data-lucide="folder-open" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Seleccionar carpeta</button>
-                            <input type="file" id="input-photos-folder" webkitdirectory style="display:none">
+                        <div class="photo-import-actions">
+                            <button type="button" class="btn btn-secondary btn-compact" onclick="document.getElementById('input-photos-files').click()" title="Seleccionar fotos"><i data-lucide="image-plus"></i><span>Seleccionar fotos</span></button>
+                            <button type="button" class="btn btn-secondary btn-compact" onclick="document.getElementById('input-photos-folder').click()" title="Seleccionar carpeta"><i data-lucide="folder-open"></i><span>Seleccionar carpeta</span></button>
+                            <input type="file" id="input-photos-folder" webkitdirectory hidden>
                         </div>
-                        <div style="margin-top:6px;">
-                            <button type="button" id="btn-watch-folder" class="btn btn-secondary" style="width:100%;font-size:0.75rem;padding:7px 10px;" onclick="toggleFolderWatcher()"><i data-lucide="eye" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;"></i>Vincular carpeta (auto-importar)</button>
+                        <div class="photo-watch-action">
+                            <button type="button" id="btn-watch-folder" class="btn btn-secondary btn-compact btn-watch-folder" onclick="toggleFolderWatcher()" title="Vincular carpeta para auto-importar"><i data-lucide="eye"></i><span>Vincular carpeta (auto-importar)</span></button>
                         </div>
-                        <div id="watched-folder-status" style="display:none;align-items:center;gap:8px;margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);font-size:0.72rem;color:var(--text-muted);"></div>
+                        <div id="watched-folder-status" class="watched-folder-status"></div>
 
                         <!-- Data stats -->
                         <div id="data-preview" style="display:none; margin-top: 12px;">
