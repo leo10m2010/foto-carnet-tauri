@@ -4,7 +4,7 @@ Notable user-facing and release-engineering changes are documented here. This pr
 
 ## Unreleased
 
-## 1.1.3 - 2026-07-28
+## 1.1.4 - 2026-07-28
 
 - Add path-based lazy loading for selections and watched folders of up to 1,000 photos, native metadata inspection, visible-only thumbnails, adjacent preview prefetching, and byte-bounded renderer caches.
 - Move blocking image and folder work off Tauri's main thread and harden Windows file authorization with handle-derived identity, reparse protection, bounded decoding, and one-use save paths.

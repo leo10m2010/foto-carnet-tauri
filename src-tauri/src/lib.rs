@@ -898,7 +898,7 @@ fn canonical_existing_folder(path: &Path) -> Result<PathBuf, String> {
 
 fn open_secure_file(path: &Path) -> Result<AuthorizedFile, String> {
     #[cfg(windows)]
-    verify_windows_no_traversal(path)?;
+    absolute_path_without_traversal(path)?;
     #[cfg(not(windows))]
     reject_final_traversal_link(path)?;
 
@@ -910,10 +910,6 @@ fn open_secure_file(path: &Path) -> Result<AuthorizedFile, String> {
         return Err("La ruta no corresponde a un archivo regular".to_string());
     }
     let resolved_path = final_path_for_handle(&file, path)?;
-    #[cfg(windows)]
-    if !windows_paths_equal(&resolved_path, &absolute_path_without_traversal(path)?) {
-        return Err("La ruta atraviesa un enlace o punto de análisis no permitido".to_string());
-    }
     let fingerprint = source_fingerprint(&file, &metadata).ok();
     Ok(AuthorizedFile {
         file,
@@ -926,7 +922,7 @@ fn open_secure_file(path: &Path) -> Result<AuthorizedFile, String> {
 fn open_secure_folder(path: &Path) -> Result<AuthorizedFolder, String> {
     #[cfg(windows)]
     {
-        verify_windows_no_traversal(path)?;
+        absolute_path_without_traversal(path)?;
         let file = open_windows_nofollow(path)
             .map_err(|_| "No se pudo acceder a la carpeta seleccionada".to_string())?;
         let metadata = file
@@ -936,9 +932,6 @@ fn open_secure_folder(path: &Path) -> Result<AuthorizedFolder, String> {
             return Err("La ruta no corresponde a una carpeta regular".to_string());
         }
         let resolved_path = final_path_for_handle(&file, path)?;
-        if !windows_paths_equal(&resolved_path, &absolute_path_without_traversal(path)?) {
-            return Err("La ruta atraviesa un enlace o punto de análisis no permitido".to_string());
-        }
         let identity = file_identity(&file)?;
         Ok(AuthorizedFolder {
             _file: file,
@@ -1069,12 +1062,6 @@ fn folder_grant_is_current(path: &Path, identity: &Option<FileIdentity>) -> bool
     open_secure_folder(path).is_ok_and(|folder| identities_match(identity, &folder.identity))
 }
 
-#[cfg(windows)]
-fn windows_paths_equal(left: &Path, right: &Path) -> bool {
-    left.to_string_lossy()
-        .eq_ignore_ascii_case(&right.to_string_lossy())
-}
-
 fn normalize_save_path(path: &Path) -> Result<PathBuf, String> {
     let file_name = path
         .file_name()
@@ -1203,24 +1190,6 @@ fn windows_reparse_tag_from_handle(file: &File) -> Option<u32> {
         )
     };
     (succeeded != 0).then_some(info.ReparseTag)
-}
-
-#[cfg(windows)]
-fn verify_windows_no_traversal(path: &Path) -> Result<(), String> {
-    let path = absolute_path_without_traversal(path)?;
-    let mut ancestors = path.ancestors().collect::<Vec<_>>();
-    ancestors.reverse();
-    for (index, component_path) in ancestors.into_iter().enumerate() {
-        if index == 0 {
-            continue;
-        }
-        let handle = open_windows_nofollow(component_path)
-            .map_err(|_| "No se pudo verificar la ruta seleccionada".to_string())?;
-        if windows_reparse_tag_from_handle(&handle).is_some_and(reparse_tag_is_traversal) {
-            return Err("La ruta atraviesa un punto de análisis no permitido".to_string());
-        }
-    }
-    Ok(())
 }
 
 fn collect_images_bounded(
@@ -2923,6 +2892,32 @@ mod tests {
         let traversing = nested.join("..").join("photo.jpg");
 
         assert!(open_secure_file(&traversing).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_authorized_open_allows_preexisting_reparse_ancestor() {
+        let directory = tempfile::tempdir().unwrap();
+        let real = directory.path().join("real-workspace");
+        let alias = directory.path().join("runner-workspace");
+        std::fs::create_dir(&real).unwrap();
+        let output = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&alias)
+            .arg(&real)
+            .output()
+            .unwrap();
+        if !output.status.success() {
+            return;
+        }
+
+        let real_photo = real.join("photo.jpg");
+        let aliased_photo = alias.join("photo.jpg");
+        std::fs::write(&real_photo, b"photo").unwrap();
+        let mut authority = FilesystemAuthority::default();
+
+        authority.register_picker_file(&aliased_photo).unwrap();
+        assert!(authority.open_authorized_file(&aliased_photo).is_ok());
     }
 
     #[cfg(windows)]
