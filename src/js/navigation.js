@@ -6,9 +6,11 @@ function navigateRecord(delta) {
     if (state.photoColorPicker.active) stopPhotoColorPickMode();
     if (state.photoCropMode.active) setPhotoCropMode(false);
 
+    const previousIndex = state.currentIndex;
     state.currentIndex += delta;
     if (state.currentIndex < 0) state.currentIndex = 0;
     if (state.currentIndex >= state.records.length) state.currentIndex = state.records.length - 1;
+    if (state.currentIndex !== previousIndex) state.hitboxes = [];
 
     updatePhotoInputsForCurrentRecord(); // Sync DOM for this record's photo config
     showSidebarNameEditor();
@@ -16,22 +18,31 @@ function navigateRecord(delta) {
     updateNavigation();
 }
 
-function clearAll() {
+async function clearAll() {
     // Only prompt if there is actually something to lose
     const hasData = state.records.length > 0 || state.templateImage || (state.csvRows && state.csvRows.length > 0);
     if (hasData && !confirm('¿Seguro que quieres limpiar toda la sesión?\n\nSe eliminarán plantilla, fotos, datos y ediciones. Esta acción no se puede deshacer.')) {
         return;
     }
 
-    // Abort any running RENIEC query
-    state.reniecGeneration++;
+    invalidatePendingWork();
 
     // Close any active overlays before resetting state
     if (state.inlineEditor.active) closeInlineEditor({ commit: false });
     if (state.photoColorPicker.active) stopPhotoColorPickMode();
     if (state.photoCropMode.active) setPhotoCropMode(false);
 
-    // Revoke all photo object URLs to free browser memory
+    // Stop native events before clearing. stopWatchingFolder also updates its UI,
+    // but all state and persistence are reset again below after it settles.
+    if (state.watchedFolderPath && typeof stopWatchingFolder === 'function') {
+        try { await stopWatchingFolder(); } catch (_) {}
+    }
+    invalidatePendingWork();
+    state.watchedFolderPath = null;
+    if (typeof updateWatcherUI === 'function') updateWatcherUI();
+
+    // Dispose decoded/cache-owned thumbnails before revoking imported source URLs.
+    if (typeof clearPhotoCaches === 'function') clearPhotoCaches();
     revokePhotoObjectUrls();
 
     // Reset all state
@@ -45,7 +56,9 @@ function clearAll() {
     localStorage.removeItem(SESSION_KEY);
     state.records             = [];
     state.photosMap           = {};
-    state.photoImageCache.clear();
+    state.photoMeta           = {};
+    state.photoImageInflight  = new Map();
+    state.photoThumbnailInflight = new Map();
     state.photoFaceBoxes      = {};
     state.photosCount         = 0;
     state.csvData             = null;
@@ -58,6 +71,11 @@ function clearAll() {
     state.history.undoStack   = [];
     state.history.redoStack   = [];
     state.history.lastSignature = '';
+    state.history.suspend       = false;
+    state.history.zoomSessionUntil = 0;
+    state.history.panSessionUntil = 0;
+    state.history.rotationSessionUntil = 0;
+    state.history.nudgeSessionUntil = 0;
     state.drag.selectedId       = null;
     state.drag.active           = false;
     state.drag.photoPanActive   = false;
@@ -67,6 +85,16 @@ function clearAll() {
     state.drag.hoveredId        = null;
     state.drag.historyCaptured  = false;
     state.hitboxes              = [];
+    state.photoColorPicker.active = false;
+    state.photoCropMode.active    = false;
+    state.inlineEditor.active     = false;
+    state.inlineEditor.fieldId    = null;
+    state.job.active              = false;
+    state.job.cancelRequested     = true;
+    state.job.label               = '';
+    clearTimeout(state.renderTimer);
+    state.renderTimer = null;
+    if (typeof cancelFilmstripWork === 'function') cancelFilmstripWork();
     resetZoom();
     invalidatePreflightReport();
 
@@ -103,9 +131,15 @@ function clearAll() {
     document.getElementById('data-preview').style.display = 'none';
     document.getElementById('stat-records').textContent = '0';
     document.getElementById('stat-photos').textContent = '0';
+    const dataTableBody = document.querySelector('#data-table tbody');
+    if (dataTableBody) dataTableBody.innerHTML = '';
     const chipReniec = document.getElementById('chip-reniec');
     if (chipReniec) chipReniec.style.display = 'none';
     document.getElementById('column-mapping').style.display = 'none';
+    const mapDni = document.getElementById('map-dni');
+    const mapExtra = document.getElementById('map-extra');
+    if (mapDni) mapDni.innerHTML = '';
+    if (mapExtra) mapExtra.innerHTML = '<option value="">— Ninguno —</option>';
     document.getElementById('preflight-report').style.display = 'none';
 
     // Hide canvas, show placeholder
@@ -128,7 +162,20 @@ function clearAll() {
     renderFilmstrip();
 
     // Restore field defaults (positions, sizes, colors)
-    initializeEditorState();
+    restoreEditorDefaults();
+    const nameEditor = document.getElementById('record-name-editor');
+    if (nameEditor) nameEditor.style.display = 'none';
+    const sidebarNombres = document.getElementById('sidebar-nombres');
+    const sidebarApellidos = document.getElementById('sidebar-apellidos');
+    if (sidebarNombres) sidebarNombres.value = '';
+    if (sidebarApellidos) sidebarApellidos.value = '';
+    const swatches = document.getElementById('editor-hud-swatches');
+    if (swatches) swatches.innerHTML = '';
+
+    // stopWatchingFolder may have scheduled a save while shutting down.
+    clearTimeout(_saveSessionTimer);
+    _saveSessionTimer = null;
+    localStorage.removeItem(SESSION_KEY);
 
     showToast('Sesión limpiada. Puedes empezar de nuevo.', 'info');
 }

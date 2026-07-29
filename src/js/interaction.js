@@ -9,6 +9,7 @@ function setupCanvasDrag() {
     canvas.addEventListener('mouseleave', onCanvasMouseUp);
     canvas.addEventListener('dblclick', onCanvasDoubleClick);
     canvas.addEventListener('wheel', onCanvasWheel, { passive: false });
+    canvas.addEventListener('keydown', onCanvasKeyDown);
 
     // Touch support
     canvas.addEventListener('touchstart', e => {
@@ -23,6 +24,44 @@ function setupCanvasDrag() {
     }, { passive: false });
     canvas.addEventListener('touchend', () => onCanvasMouseUp());
     setupEditorHudControls();
+}
+
+function onCanvasKeyDown(event) {
+    if (!state.templateImage || state.records.length === 0) return;
+    if (event.key === 'Escape' && state.drag.selectedId) {
+        event.preventDefault();
+        event.stopPropagation();
+        deselectCanvasElement();
+        announceCanvasSelection('Selección eliminada');
+        return;
+    }
+    if (event.key === 'F2' && state.drag.selectedId) {
+        event.preventDefault();
+        event.stopPropagation();
+        startInlineTextEditFromSelection();
+        return;
+    }
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const ids = state.hitboxes.map(hitbox => hitbox.id);
+    if (!ids.length) return;
+    const current = ids.indexOf(state.drag.selectedId);
+    state.drag.selectedId = ids[(current + 1) % ids.length];
+    state.drag.hoveredId = null;
+    tryRender();
+    updateEditorHud();
+    const labels = {
+        nombres: 'Nombres', apellidos: 'Apellidos', dni: 'DNI', extra: 'Cargo',
+        photo: 'Foto', barcode: 'Código de barras'
+    };
+    announceCanvasSelection(`${labels[state.drag.selectedId] || state.drag.selectedId} seleccionado. Usa las flechas para moverlo y Tab para acceder a sus controles.`);
+}
+
+function announceCanvasSelection(message) {
+    const status = document.getElementById('canvas-a11y-status');
+    if (status) status.textContent = message;
 }
 
 function setupEditorHudControls() {
@@ -295,7 +334,8 @@ function onCanvasMouseDown(e) {
         state.drag.startPhotoOffsetX = toInt(document.getElementById('field-photo-offset-x')?.value, 0);
         state.drag.startPhotoOffsetY = toInt(document.getElementById('field-photo-offset-y')?.value, 0);
         document.getElementById('carnet-canvas').style.cursor = 'grabbing';
-        renderCarnet(state.currentIndex).then(() => {
+        renderCarnet(state.currentIndex).then(rendered => {
+            if (!rendered) return;
             drawSelectionOverlay();
             updateEditorHud();
         });
@@ -344,7 +384,8 @@ function onCanvasMouseDown(e) {
         state.drag.snapGuides = { xLines: [], yLines: [] };
 
         document.getElementById('carnet-canvas').style.cursor = 'grabbing';
-        renderCarnet(state.currentIndex).then(() => {
+        renderCarnet(state.currentIndex).then(rendered => {
+            if (!rendered) return;
             drawSelectionOverlay();
             updateEditorHud();
         });
@@ -396,7 +437,8 @@ function onCanvasMouseMove(e) {
                 savePhotoConfigFromDOM();
             }
 
-            renderCarnet(state.currentIndex).then(() => {
+            renderCarnet(state.currentIndex).then(rendered => {
+                if (!rendered) return;
                 drawSelectionOverlay();
                 updateEditorHud();
             });
@@ -531,7 +573,8 @@ function onCanvasMouseMove(e) {
             if (id === 'photo') savePhotoConfigFromDOM();
         }
 
-        renderCarnet(state.currentIndex).then(() => {
+        renderCarnet(state.currentIndex).then(rendered => {
+            if (!rendered) return;
             drawSelectionOverlay();
             updateEditorHud();
         });
@@ -551,7 +594,8 @@ function onCanvasMouseMove(e) {
             }
             if (state.drag.hoveredId !== hitId) {
                 state.drag.hoveredId = hitId;
-                renderCarnet(state.currentIndex).then(() => {
+                renderCarnet(state.currentIndex).then(rendered => {
+                    if (!rendered) return;
                     drawSelectionOverlay();
                     updateEditorHud();
                 });
@@ -560,7 +604,8 @@ function onCanvasMouseMove(e) {
             canvas.style.cursor = 'default';
             if (state.drag.hoveredId) {
                 state.drag.hoveredId = null;
-                renderCarnet(state.currentIndex).then(() => {
+                renderCarnet(state.currentIndex).then(rendered => {
+                    if (!rendered) return;
                     drawSelectionOverlay();
                     updateEditorHud();
                 });
@@ -571,6 +616,7 @@ function onCanvasMouseMove(e) {
 
 function onCanvasMouseUp() {
     if (state.drag.active) {
+        const changed = state.drag.historyCaptured;
         state.drag.active = false;
         state.drag.historyCaptured = false;
         state.drag.photoPanActive = false;
@@ -578,10 +624,12 @@ function onCanvasMouseUp() {
         state.drag.snapGuides = null;
         const canvas = document.getElementById('carnet-canvas');
         canvas.style.cursor = state.photoCropMode.active && state.drag.selectedId === 'photo' ? 'move' : 'default';
-        renderCarnet(state.currentIndex).then(() => {
+        renderCarnet(state.currentIndex).then(rendered => {
+            if (!rendered) return;
             drawSelectionOverlay();
             updateEditorHud();
         });
+        if (changed) saveSessionDebounced();
         updateEditorHud();
     }
 }
@@ -720,7 +768,8 @@ function onCanvasDoubleClick(e) {
     state.drag.selectedId = hitId;
     const hb = state.hitboxes.find(h => h.id === hitId);
 
-    renderCarnet(state.currentIndex).then(() => {
+    renderCarnet(state.currentIndex).then(rendered => {
+        if (!rendered) return;
         drawSelectionOverlay();
         updateEditorHud();
         if (hitId === 'photo') {
@@ -755,9 +804,17 @@ function closeInlineEditor(options = { commit: false }) {
     const fieldId = state.inlineEditor.fieldId;
 
     if (shouldCommit && fieldId && state.records.length > 0) {
-        pushUndoSnapshot(`inline-edit:${fieldId}`);
         const record = state.records[state.currentIndex];
         const value = input.value.trim();
+        const nextValue = fieldId === 'dni' && !value ? record.dni : value;
+        if (String(record[fieldId] ?? '') === String(nextValue ?? '')) {
+            input.remove();
+            state.inlineEditor.active = false;
+            state.inlineEditor.fieldId = null;
+            return;
+        }
+        pushUndoSnapshot(`inline-edit:${fieldId}`);
+        ensureRecordIdentity(record);
         invalidatePreflightReport();
 
         if (fieldId === 'dni') {
@@ -769,6 +826,7 @@ function closeInlineEditor(options = { commit: false }) {
         }
 
         showDataPreview();
+        saveSessionDebounced();
         tryRender();
     }
 
@@ -877,6 +935,11 @@ function nudgeSelectedElement(dx, dy) {
     if (!selected) return;
 
     const { id, hb } = selected;
+    const now = Date.now();
+    if (now > state.history.nudgeSessionUntil) {
+        pushUndoSnapshot('nudge-element');
+        state.history.nudgeSessionUntil = now + 350;
+    }
     const maxX = Math.max(0, state.templateImage.width - hb.w);
     const maxY = Math.max(0, state.templateImage.height - hb.h);
 
@@ -884,6 +947,7 @@ function nudgeSelectedElement(dx, dy) {
     const nextY = Math.min(maxY, Math.max(0, hb.y + dy));
 
     applyVisualPositionToInputs(id, hb, nextX, nextY);
+    saveSessionDebounced();
     tryRender();
 }
 
@@ -905,6 +969,7 @@ function alignSelectedElement(axis = 'x') {
     const nextY = axis === 'y' ? centerY : hb.y;
 
     applyVisualPositionToInputs(id, hb, nextX, nextY);
+    saveSessionDebounced();
     tryRender();
     showToast(`Elemento centrado en eje ${axis.toUpperCase()}`, 'success');
 }
@@ -965,6 +1030,7 @@ function resetSelectedElement() {
         syncHudPhotoControls(getPhotoConfig());
     }
 
+    saveSessionDebounced();
     tryRender();
     showToast('Elemento restablecido a valores iniciales', 'success');
 }
@@ -999,6 +1065,7 @@ function setSelectedPhotoZoom(value, options = {}) {
         syncHudPhotoControls(getPhotoConfig());
     }
     invalidatePreflightReport();
+    saveSessionDebounced();
     tryRender();
 }
 
@@ -1019,6 +1086,7 @@ function panSelectedPhoto(dx, dy) {
     inputY.value = nextY;
     invalidatePreflightReport();
     savePhotoConfigFromDOM();
+    saveSessionDebounced();
     tryRender();
 }
 
@@ -1035,6 +1103,7 @@ function rotatePhoto(deltaDeg, reset = false) {
     invalidatePreflightReport();
     savePhotoConfigFromDOM();
     syncHudPhotoControls(getPhotoConfig());
+    saveSessionDebounced();
     tryRender();
 }
 
@@ -1052,6 +1121,7 @@ function setSelectedPhotoRotation(value) {
     invalidatePreflightReport();
     savePhotoConfigFromDOM();
     syncHudPhotoControls(getPhotoConfig());
+    saveSessionDebounced();
     tryRender();
 }
 
@@ -1103,6 +1173,7 @@ function setPhotoFitMode(mode) {
     invalidatePreflightReport();
     savePhotoConfigFromDOM();
     syncHudPhotoControls(getPhotoConfig());
+    saveSessionDebounced();
     tryRender();
 }
 
@@ -1150,6 +1221,7 @@ function resetSelectedPhotoCrop() {
     invalidatePreflightReport();
     savePhotoConfigFromDOM();
     syncHudPhotoControls(getPhotoConfig());
+    saveSessionDebounced();
     tryRender();
 }
 

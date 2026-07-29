@@ -1,12 +1,21 @@
+let _dataUploadGeneration = 0;
+
 function handleDataUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
+    const generation = ++_dataUploadGeneration;
+    const lifecycleGeneration = state.lifecycleGeneration;
+    const recordsRef = state.records;
+    const isCurrent = () => generation === _dataUploadGeneration &&
+        lifecycleGeneration === state.lifecycleGeneration && recordsRef === state.records;
     const isCSV = /\.csv$/i.test(file.name);
 
     const reader = new FileReader();
     reader.onload = async (ev) => {
+        if (!isCurrent()) return;
         try {
             await ensureXLSX();
+            if (!isCurrent()) return;
             let data;
             if (isCSV) {
                 const workbook = XLSX.read(ev.target.result, { type: 'binary', codepage: 65001 });
@@ -31,6 +40,7 @@ function handleDataUpload(e) {
             }
             const dniCol = autoDetectDNIColumn(columns, data);
             const extraCol = autoDetectExtraColumn(columns);
+            if (!isCurrent()) return;
 
             state.csvRows = data;
             state.csvData = dniCol ? buildCSVIndex(dniCol) : {};
@@ -65,8 +75,10 @@ function handleDataUpload(e) {
             }
 
             showToast(`CSV cargado: ${data.length} registros. Se vincularán por DNI.`, 'success');
+            reportDuplicateCSVKeys(dniCol);
             saveSessionDebounced();
         } catch (err) {
+            if (!isCurrent()) return;
             showToast('Error al leer el archivo: ' + err.message, 'error');
             console.error(err);
         }
@@ -161,20 +173,46 @@ function populateCSVMapping(columns, defaultDni, defaultExtra) {
 
 function buildCSVIndex(dniColumn) {
     const index = {};
+    state.csvDuplicateKeys = [];
     if (!dniColumn || !Array.isArray(state.csvRows)) return index;
 
-    state.csvRows.forEach(row => {
+    const counts = new Map();
+    const firstRows = new Map();
+
+    state.csvRows.forEach((row, rowIndex) => {
         const key = normalizeDNI(row[dniColumn]);
         if (!key) return;
-        index[key] = row;
+        const count = (counts.get(key) || 0) + 1;
+        counts.set(key, count);
+        if (!(key in index)) {
+            index[key] = row;
+            firstRows.set(key, rowIndex + 2);
+        } else if (count === 2) {
+            state.csvDuplicateKeys.push({ key, firstRow: firstRows.get(key), duplicateRow: rowIndex + 2, count });
+        } else {
+            const duplicate = state.csvDuplicateKeys.find(item => item.key === key);
+            if (duplicate) duplicate.count = count;
+        }
     });
 
     return index;
 }
 
+function reportDuplicateCSVKeys(dniColumn) {
+    const duplicates = Array.isArray(state.csvDuplicateKeys) ? state.csvDuplicateKeys : [];
+    if (!duplicates.length) return;
+    const sample = duplicates.slice(0, 5).map(item => `${item.key} (${item.count})`).join(', ');
+    console.warn(`[CSV] Claves duplicadas en "${dniColumn}"; se conserva la primera fila:`, duplicates);
+    showToast(
+        `CSV: ${duplicates.length} DNI duplicado${duplicates.length !== 1 ? 's' : ''}. Se conserva la primera fila. ${sample}`,
+        'warning'
+    );
+}
+
 function remergeCSV() {
     if (!Array.isArray(state.csvRows) || state.csvRows.length === 0 || state.records.length === 0) return;
     const matched = mergeCSVData();
+    reportDuplicateCSVKeys(document.getElementById('map-dni')?.value || '');
     showDataPreview();
     tryRender();
     if (matched === 0) {

@@ -1,0 +1,6 @@
+node_modules/
+src/
+src-tauri/
+package-lock.json
+portable.conf.json
+.vscode/

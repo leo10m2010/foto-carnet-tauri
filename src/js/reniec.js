@@ -1,25 +1,166 @@
 const RENIEC_TOKEN_KEY = 'reniec-token';
+const RENIEC_TOKEN_PERSISTENCE_KEY = 'fotocarnet_reniec_token_persist';
+let _reniecRunGeneration = 0;
+let _reniecTestGeneration = 0;
+let _reniecRetryTimer = null;
+let _reniecPersistTimer = null;
+let _reniecTokenMemory = '';
+let _reniecPersistenceEnabled = false;
+let _reniecCredentialQueue = Promise.resolve();
+
+function queueReniecCredentialOperation(operation) {
+    const result = _reniecCredentialQueue.then(operation, operation);
+    _reniecCredentialQueue = result.catch(() => {});
+    return result;
+}
+
+function setReniecPersistencePreference(enabled) {
+    try {
+        localStorage.setItem(RENIEC_TOKEN_PERSISTENCE_KEY, String(enabled));
+    } catch (_) {}
+}
+
+function persistReniecTokenDebounced(token) {
+    clearTimeout(_reniecPersistTimer);
+    _reniecPersistTimer = setTimeout(async () => {
+        _reniecPersistTimer = null;
+        if (!_reniecPersistenceEnabled) return;
+        try {
+            await reniecTokenStore.set(token);
+        } catch (err) {
+            console.warn('[RENIEC] No se pudo guardar el token:', err);
+            showToast('No se pudo guardar el token RENIEC de forma segura', 'error');
+        }
+    }, 300);
+}
+
+function createReniecError(code, message, options = {}) {
+    const err = new Error(message);
+    err.code = code;
+    err.status = options.status || 0;
+    err.retryable = !!options.retryable;
+    return err;
+}
+
+function classifyReniecError(value, status = 0) {
+    const message = String(value?.message || value || 'No se pudo consultar RENIEC');
+    const normalized = message.toLowerCase();
+    if (status === 404 || /no encontrado/.test(normalized)) return createReniecError('not_found', 'DNI no encontrado', { status: 404 });
+    if (status === 401 || status === 403 || /token|sin permisos|unauthorized|forbidden/.test(normalized)) {
+        return createReniecError('auth', 'Token RENIEC inválido o sin permisos', { status });
+    }
+    if (status === 429 || /límite|limite|rate/.test(normalized)) {
+        return createReniecError('rate_limit', 'Límite de consultas superado; espera unos segundos', { status: 429, retryable: true });
+    }
+    if (status >= 500) return createReniecError('server', `Error del servidor RENIEC (${status})`, { status, retryable: true });
+    if (/fetch|network|conex|timeout|timed out|dns|offline|sending request|tcp|tls/.test(normalized)) {
+        return createReniecError('network', 'No se pudo conectar con RENIEC', { retryable: true });
+    }
+    return createReniecError('response', message, { status, retryable: status >= 500 });
+}
+
+async function queryReniecRecord(dni, token) {
+    if (window.electronAPI?.queryRENIEC) {
+        let result;
+        try {
+            result = await window.electronAPI.queryRENIEC(dni, token);
+        } catch (err) {
+            throw classifyReniecError(err);
+        }
+        if (!result?.ok) throw classifyReniecError(result?.error || 'Falló la consulta');
+        return result.body || {};
+    }
+
+    let response;
+    try {
+        response = await fetch(`https://dniruc.apisperu.com/api/v1/dni/${encodeURIComponent(dni)}?token=${encodeURIComponent(token)}`);
+    } catch (err) {
+        throw classifyReniecError(err);
+    }
+    if (!response.ok) throw classifyReniecError(`HTTP ${response.status}`, response.status);
+    try {
+        return await response.json();
+    } catch (_) {
+        throw createReniecError('response', 'RENIEC devolvió una respuesta inválida');
+    }
+}
+
+function scheduleReniecEnrichment() {
+    clearTimeout(_reniecRetryTimer);
+    if (!getReniecToken()) return;
+    _reniecRetryTimer = setTimeout(() => {
+        _reniecRetryTimer = null;
+        enrichWithRENIEC().catch(err => console.warn('[RENIEC] No se pudo reintentar:', err));
+    }, 500);
+}
 
 const reniecTokenStore = {
     get() {
-        try {
-            return localStorage.getItem(RENIEC_TOKEN_KEY) || '';
-        } catch (_) {
-            return '';
+        return _reniecTokenMemory;
+    },
+    async load() {
+        if (!_reniecPersistenceEnabled || !window.__TAURI__) return '';
+        if (!window.electronAPI?.getReniecToken) {
+            throw new Error('El almacenamiento seguro no está disponible');
         }
+        const token = await queueReniecCredentialOperation(() => window.electronAPI.getReniecToken());
+        _reniecTokenMemory = typeof token === 'string' ? token : '';
+        return _reniecTokenMemory;
     },
-    set(token) {
-        try {
-            if (token) localStorage.setItem(RENIEC_TOKEN_KEY, token);
-            else localStorage.removeItem(RENIEC_TOKEN_KEY);
-        } catch (_) {}
+    async set(token) {
+        _reniecTokenMemory = token?.trim() || '';
+        if (!_reniecPersistenceEnabled || !window.__TAURI__) return;
+        if (!_reniecTokenMemory) return this.clear();
+        if (!window.electronAPI?.setReniecToken) {
+            throw new Error('El almacenamiento seguro no está disponible');
+        }
+        const value = _reniecTokenMemory;
+        return queueReniecCredentialOperation(() => window.electronAPI.setReniecToken(value));
     },
-    clear() {
-        try {
-            localStorage.removeItem(RENIEC_TOKEN_KEY);
-        } catch (_) {}
+    async clear() {
+        _reniecTokenMemory = '';
+        if (!window.__TAURI__) return;
+        if (!window.electronAPI?.clearReniecToken) {
+            throw new Error('El almacenamiento seguro no está disponible');
+        }
+        return queueReniecCredentialOperation(() => window.electronAPI.clearReniecToken());
     }
 };
+
+async function initializeReniecTokenPersistence() {
+    // Remove credentials left by older builds; token plaintext is never read back.
+    try { localStorage.removeItem(RENIEC_TOKEN_KEY); } catch (_) {}
+    try {
+        _reniecPersistenceEnabled = localStorage.getItem(RENIEC_TOKEN_PERSISTENCE_KEY) === 'true';
+    } catch (_) {
+        _reniecPersistenceEnabled = false;
+    }
+
+    const persistInput = document.getElementById('reniec-token-persist');
+    if (!window.__TAURI__) {
+        _reniecPersistenceEnabled = false;
+        setReniecPersistencePreference(false);
+        if (persistInput) {
+            persistInput.checked = false;
+            persistInput.disabled = true;
+            persistInput.title = 'En el navegador, el token solo se mantiene en memoria.';
+        }
+    } else if (persistInput) {
+        persistInput.checked = _reniecPersistenceEnabled;
+    }
+
+    try {
+        if (_reniecPersistenceEnabled) await reniecTokenStore.load();
+        else await reniecTokenStore.clear();
+    } catch (err) {
+        _reniecTokenMemory = '';
+        console.warn('[RENIEC] No se pudo inicializar el almacenamiento seguro:', err);
+        showToast('No se pudo leer el token RENIEC guardado', 'error');
+    }
+
+    const tokenInput = document.getElementById('field-reniec-token');
+    if (tokenInput) tokenInput.value = _reniecTokenMemory;
+}
 
 function getReniecToken() {
     return reniecTokenStore.get() ||
@@ -34,27 +175,53 @@ function setupReniecControls() {
         tokenInput.dataset.bound = '1';
         tokenInput.addEventListener('input', () => {
             const token = tokenInput.value.trim();
-            if (persistInput?.checked !== false) {
-                reniecTokenStore.set(token);
-            } else {
-                reniecTokenStore.clear();
-            }
+            _reniecTokenMemory = token;
+            if (_reniecPersistenceEnabled) persistReniecTokenDebounced(token);
+            _reniecRunGeneration++;
             updateReniecTokenStatus();
+            scheduleReniecEnrichment();
         });
     }
 
     if (persistInput && persistInput.dataset.bound !== '1') {
         persistInput.dataset.bound = '1';
-        persistInput.addEventListener('change', () => {
+        persistInput.addEventListener('change', async () => {
+            clearTimeout(_reniecPersistTimer);
+            _reniecPersistTimer = null;
             const token = tokenInput?.value?.trim() || '';
             if (persistInput.checked) {
-                reniecTokenStore.set(token);
-                showToast('Token RENIEC se guardara localmente', 'info');
+                _reniecPersistenceEnabled = true;
+                try {
+                    await reniecTokenStore.set(token);
+                    setReniecPersistencePreference(true);
+                    showToast('Token RENIEC guardado en el almacén seguro de Windows', 'info');
+                } catch (err) {
+                    _reniecPersistenceEnabled = false;
+                    persistInput.checked = false;
+                    setReniecPersistencePreference(false);
+                    console.warn('[RENIEC] No se pudo guardar el token:', err);
+                    showToast('No se pudo guardar el token RENIEC de forma segura', 'error');
+                }
             } else {
-                reniecTokenStore.clear();
-                showToast('Token RENIEC no se guardara en este equipo', 'info');
+                _reniecTokenMemory = token;
+                try {
+                    await reniecTokenStore.clear();
+                    _reniecTokenMemory = token;
+                    _reniecPersistenceEnabled = false;
+                    setReniecPersistencePreference(false);
+                    showToast('Token RENIEC eliminado del almacén seguro', 'info');
+                } catch (err) {
+                    _reniecTokenMemory = token;
+                    _reniecPersistenceEnabled = true;
+                    persistInput.checked = true;
+                    setReniecPersistencePreference(true);
+                    console.warn('[RENIEC] No se pudo eliminar el token guardado:', err);
+                    showToast('No se pudo eliminar el token RENIEC guardado', 'error');
+                }
             }
+            _reniecRunGeneration++;
             updateReniecTokenStatus();
+            scheduleReniecEnrichment();
         });
     }
 
@@ -96,14 +263,33 @@ function toggleReniecTokenVisibility() {
     }
 }
 
-function clearReniecToken() {
-    reniecTokenStore.clear();
+async function clearReniecToken() {
+    _reniecRunGeneration++;
+    _reniecTestGeneration++;
+    clearTimeout(_reniecRetryTimer);
+    clearTimeout(_reniecPersistTimer);
+    _reniecPersistTimer = null;
+    const token = getReniecToken();
+    try {
+        await reniecTokenStore.clear();
+    } catch (err) {
+        _reniecTokenMemory = token;
+        const input = document.getElementById('field-reniec-token');
+        if (input) input.value = token;
+        updateReniecTokenStatus();
+        console.warn('[RENIEC] No se pudo eliminar el token guardado:', err);
+        showToast('No se pudo eliminar el token RENIEC guardado', 'error');
+        return false;
+    }
     const input = document.getElementById('field-reniec-token');
     if (input) input.value = '';
     updateReniecTokenStatus();
     const result = document.getElementById('reniec-test-result');
     if (result) result.innerHTML = '';
+    const testButton = document.getElementById('btn-test-reniec');
+    if (testButton) { testButton.disabled = false; testButton.textContent = 'Probar'; }
     showToast('Token RENIEC eliminado', 'info');
+    return true;
 }
 
 // Test-probe the token with a well-known public DNI so the user can verify it works.
@@ -112,6 +298,7 @@ async function testReniecToken() {
     const btn    = document.getElementById('btn-test-reniec');
     const result = document.getElementById('reniec-test-result');
     const token  = getReniecToken();
+    const testGeneration = ++_reniecTestGeneration;
 
     if (!token) {
         if (result) result.innerHTML = `<span class="inline-result-row inline-result-error">${iconHtml('x-circle', 'inline-result-icon')}<span>Pega tu token primero.</span></span>`;
@@ -124,19 +311,8 @@ async function testReniecToken() {
     refreshLucideIcons();
 
     try {
-        let json, httpStatus = 0, ok = false;
-        if (window.electronAPI?.queryRENIEC) {
-            const r = await window.electronAPI.queryRENIEC('12345678', token);
-            ok   = r.ok;
-            json = r.body;
-            if (!ok) throw new Error(r.error || 'Falló la consulta');
-        } else {
-            const resp = await fetch(`https://dniruc.apisperu.com/api/v1/dni/12345678?token=${encodeURIComponent(token)}`);
-            httpStatus = resp.status;
-            if (resp.status === 401 || resp.status === 403) throw new Error('Token inválido o sin permisos');
-            if (resp.status === 429) throw new Error('Límite de consultas superado');
-            json = await resp.json().catch(() => ({}));
-        }
+        const json = await queryReniecRecord('12345678', token);
+        if (testGeneration !== _reniecTestGeneration || token !== getReniecToken()) return;
 
         // apisperu returns { success:false, message:"DNI no encontrado" } for unknown DNIs with a valid token —
         // that still proves the token works.
@@ -144,107 +320,126 @@ async function testReniecToken() {
         if (tokenWorks) {
             if (result) result.innerHTML = `<span class="inline-result-row inline-result-success">${iconHtml('check-circle-2', 'inline-result-icon')}<span>Token válido — RENIEC responde correctamente.</span></span>`;
             showToast('Token RENIEC verificado', 'success');
+            scheduleReniecEnrichment();
         } else {
             const msg = json?.message || 'Respuesta inesperada';
             if (/token/i.test(msg)) throw new Error(msg);
             if (result) result.innerHTML = `<span class="inline-result-row inline-result-success">${iconHtml('check-circle-2', 'inline-result-icon')}<span>Token válido <span class="inline-result-muted">(respuesta: ${escapeHtml(msg)})</span></span></span>`;
         }
-    } catch (err) {
+    } catch (rawError) {
+        if (testGeneration !== _reniecTestGeneration || token !== getReniecToken()) return;
+        const err = rawError?.code ? rawError : classifyReniecError(rawError);
+        if (err.code === 'not_found') {
+            if (result) result.innerHTML = `<span class="inline-result-row inline-result-success">${iconHtml('check-circle-2', 'inline-result-icon')}<span>Token válido — RENIEC respondió sin encontrar el DNI de prueba.</span></span>`;
+            showToast('Token RENIEC verificado', 'success');
+            scheduleReniecEnrichment();
+            return;
+        }
         const msg = err?.message || 'Error al probar el token';
         if (result) result.innerHTML = `<span class="inline-result-row inline-result-error">${iconHtml('x-circle', 'inline-result-icon')}<span>${escapeHtml(msg)}</span></span>`;
         showToast(`Token RENIEC: ${msg}`, 'error');
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = 'Probar'; }
-        refreshLucideIcons();
+        if (testGeneration === _reniecTestGeneration) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Probar'; }
+            refreshLucideIcons();
+        }
     }
 }
 
 async function enrichWithRENIEC() {
-    // Capture the generation token at the moment this query starts.
-    // If the user reloads photos, state.reniecGeneration increments and
-    // every check below will abort — preventing stale data from being written.
-    const myGeneration = state.reniecGeneration;
-    const isStale = () => state.reniecGeneration !== myGeneration;
+    const token = getReniecToken();
+    if (!token) return;
 
-    const toEnrich = state.records.filter(r => /^\d{8}$/.test(getRecordKey(r)) && !r.reniecOk);
+    const runGeneration = ++_reniecRunGeneration;
+    const dataGeneration = state.reniecGeneration;
+    const recordsRef = state.records;
+    const isStale = () => runGeneration !== _reniecRunGeneration ||
+        dataGeneration !== state.reniecGeneration || recordsRef !== state.records || token !== getReniecToken();
+
+    const toEnrich = state.records
+        .filter(record => /^\d{8}$/.test(getRecordKey(record)) && record.reniecOk !== true && record.reniecStatus !== 'not_found')
+        .map(record => {
+            if (record.filenameNombres === undefined) record.filenameNombres = record.nombres || '';
+            if (record.filenameApellidos === undefined) record.filenameApellidos = record.apellidos || '';
+            return {
+                record,
+                dni: getRecordKey(record),
+                nombres: record.nombres || '',
+                apellidos: record.apellidos || '',
+                photoSource: state.photoPaths[getRecordKey(record)] || state.photosMap[getRecordKey(record)] || ''
+            };
+        });
     if (toEnrich.length === 0) return;
-
-    // Build a fast lookup: dniKey -> index in state.records (avoids O(n²) findIndex)
-    const dniIndexMap = new Map(state.records.map((r, i) => [getRecordKey(r), i]));
 
     showToast(`Verificando ${toEnrich.length} DNI${toEnrich.length > 1 ? 's' : ''} en RENIEC…`, 'info');
     updateReniecStatChip(`0/${toEnrich.length}`);
 
-    let ok = 0, notFound = 0, errors = 0;
+    let ok = 0, notFound = 0, errors = 0, skipped = 0;
+    let consecutiveTransientErrors = 0;
     let firstError = '';
+    let exportInvalidated = false;
 
     for (let i = 0; i < toEnrich.length; i++) {
         if (i > 0) await new Promise(r => setTimeout(r, 200)); // ≈ 5 req/s, skip on first
         if (isStale()) return;
 
-        const record = toEnrich[i];
-        const dni = getRecordKey(record);
-        // Resolve index outside try/catch so it's accessible in both blocks
-        const idx = dniIndexMap.get(dni);
-        if (idx === undefined) continue;
+        const candidate = toEnrich[i];
+        const { record, dni } = candidate;
 
         try {
-            let json;
+            const json = await queryReniecRecord(dni, token);
 
-            const token = getReniecToken();
-            if (!token) {
-                throw new Error('Configura tu token RENIEC en la sección de datos.');
-            }
-
-            if (window.electronAPI?.queryRENIEC) {
-                const result = await window.electronAPI.queryRENIEC(dni, token);
-                if (!result.ok) throw new Error(result.error);
-                json = result.body;
-            } else {
-                const resp = await fetch(
-                    `https://dniruc.apisperu.com/api/v1/dni/${dni}?token=${token}`
-                );
-                if (!resp.ok) {
-                    const code = resp.status;
-                    if (code === 401 || code === 403) throw new Error('Token RENIEC inválido o sin permisos');
-                    if (code === 404) throw new Error('DNI no encontrado');
-                    if (code === 429) throw new Error('Límite de consultas superado — espera unos segundos');
-                    if (code >= 500)  throw new Error(`Error del servidor RENIEC (${code})`);
-                    throw new Error(`Respuesta HTTP inesperada (${code})`);
-                }
-                json = await resp.json();
-            }
-
-            // Check again after the await — a reload could have happened during the request
             if (isStale()) return;
-            // Guard against undo/redo replacing state.records between awaits:
-            // if the record at idx no longer matches our DNI, skip to avoid a wrong write
-            if (idx >= state.records.length || getRecordKey(state.records[idx]) !== dni) continue;
+            const currentPhotoSource = state.photoPaths[dni] || state.photosMap[dni] || '';
+            const provenanceMatches = state.records.includes(record) && getRecordKey(record) === dni &&
+                record.nombres === candidate.nombres && record.apellidos === candidate.apellidos &&
+                currentPhotoSource === candidate.photoSource;
+            if (!provenanceMatches) {
+                skipped++;
+                continue;
+            }
 
-            // apisperu.com: success response has `nombres` field directly; failure has success:false
             if (json && json.nombres && json.success !== false) {
+                if (!exportInvalidated) {
+                    invalidatePreflightReport();
+                    exportInvalidated = true;
+                }
                 const nombres   = (json.nombres || '').trim();
                 const apellidos = `${(json.apellidoPaterno || '')} ${(json.apellidoMaterno || '')}`.trim();
-                if (!state.records[idx].filenameNombres)   state.records[idx].filenameNombres   = state.records[idx].nombres;
-                if (!state.records[idx].filenameApellidos) state.records[idx].filenameApellidos = state.records[idx].apellidos;
-                if (nombres)   state.records[idx].nombres   = nombres;
-                if (apellidos) state.records[idx].apellidos = apellidos;
-                state.records[idx].reniecNombres   = nombres;
-                state.records[idx].reniecApellidos = apellidos;
-                state.records[idx].reniecOk = true;
+                if (record.filenameNombres === undefined) record.filenameNombres = candidate.nombres;
+                if (record.filenameApellidos === undefined) record.filenameApellidos = candidate.apellidos;
+                if (nombres) record.nombres = nombres;
+                if (apellidos) record.apellidos = apellidos;
+                record.reniecNombres = nombres;
+                record.reniecApellidos = apellidos;
+                record.reniecOk = true;
+                record.reniecStatus = 'verified';
+                delete record.reniecError;
                 ok++;
+                consecutiveTransientErrors = 0;
             } else {
-                state.records[idx].reniecOk = false;
-                notFound++;
+                throw classifyReniecError(json?.message || 'DNI no encontrado');
             }
-        } catch (err) {
+        } catch (rawError) {
             if (isStale()) return;
-            state.records[idx].reniecOk = false;
-            errors++;
+            if (!state.records.includes(record) || getRecordKey(record) !== dni) continue;
+            const err = rawError?.code ? rawError : classifyReniecError(rawError);
             const msg = err?.message || '';
-            if (!firstError) firstError = msg;
-            // Token/rate-limit errors will repeat for every remaining DNI — stop early.
-            if (msg.includes('Token RENIEC') || msg.includes('Límite de consultas')) break;
+            if (err.code === 'not_found') {
+                record.reniecOk = false;
+                record.reniecStatus = 'not_found';
+                delete record.reniecError;
+                notFound++;
+                consecutiveTransientErrors = 0;
+            } else {
+                delete record.reniecOk;
+                record.reniecStatus = err.code || 'error';
+                record.reniecError = { code: err.code || 'error', message: msg, retryable: !!err.retryable };
+                errors++;
+                consecutiveTransientErrors = err.retryable ? consecutiveTransientErrors + 1 : 0;
+                if (!firstError) firstError = msg;
+                if (err.code === 'auth' || err.code === 'rate_limit' || consecutiveTransientErrors >= 3) break;
+            }
         }
 
         // Update chip counter every record (cheap text update) so large batches show live progress
@@ -269,13 +464,14 @@ async function enrichWithRENIEC() {
     if (corrected > 0) msg += `, ${corrected} nombre${corrected > 1 ? 's' : ''} corregido${corrected > 1 ? 's' : ''}`;
     if (notFound > 0)  msg += `, ${notFound} no encontrado${notFound > 1 ? 's' : ''}`;
     if (errors > 0)    msg += `, ${errors} con error`;
+    if (skipped > 0)   msg += `, ${skipped} omitido${skipped > 1 ? 's' : ''} por cambios locales`;
     if (firstError)    msg += ` — ${firstError}`;
 
     showToast(msg, ok > 0 ? 'success' : (errors > 0 ? 'error' : 'warning'));
 
     // After enrichment: detect if filename parser had nombres/apellidos swapped
     // and auto-repair unverified records if the swap pattern is consistent.
-    detectAndFixNameSwap();
+    detectAndFixNameSwap(runGeneration);
     updateFilmstripTooltips(); // Update card titles without rebuilding the DOM
 
     saveSession(); // Persist RENIEC-enriched names
@@ -283,15 +479,15 @@ async function enrichWithRENIEC() {
 
 // ---- Detect & fix nombres↔apellidos swap ----
 // Compares what the filename parser produced vs what RENIEC says is correct.
-// If ≥50% of RENIEC-verified records had the fields inverted, fixes all unverified ones.
-function detectAndFixNameSwap() {
+// Requires a strong, repeated inversion pattern before touching unverified records.
+function detectAndFixNameSwap(runGeneration = _reniecRunGeneration) {
     const verified = state.records.filter(r =>
         r.reniecOk === true &&
         r.filenameNombres !== undefined &&
         r.reniecNombres   !== undefined &&
         r.reniecApellidos !== undefined
     );
-    if (verified.length < 2) return; // Not enough data to detect a pattern
+    if (verified.length < 4 || runGeneration !== _reniecRunGeneration) return;
 
     function norm(s) {
         return (s || '').toUpperCase().trim().replace(/\s+/g, ' ');
@@ -307,22 +503,37 @@ function detectAndFixNameSwap() {
     }
 
     let swapCount = 0;
+    let directCount = 0;
     for (const r of verified) {
-        // A "swap" means: what was stored as nombres ≈ RENIEC's apellidos (and vice versa)
-        const nombresWasApellidos = matchScore(r.filenameNombres,   r.reniecApellidos) >= 0.5;
-        const apellidosWasNombres = matchScore(r.filenameApellidos, r.reniecNombres)   >= 0.5;
-        if (nombresWasApellidos && apellidosWasNombres) swapCount++;
+        const swapScore = Math.min(
+            matchScore(r.filenameNombres, r.reniecApellidos),
+            matchScore(r.filenameApellidos, r.reniecNombres)
+        );
+        const directScore = Math.min(
+            matchScore(r.filenameNombres, r.reniecNombres),
+            matchScore(r.filenameApellidos, r.reniecApellidos)
+        );
+        if (swapScore >= 0.75 && swapScore >= directScore + 0.25) swapCount++;
+        if (directScore >= 0.75) directCount++;
     }
 
-    if (swapCount / verified.length < 0.5) return; // No consistent pattern — don't touch anything
+    if (swapCount / verified.length < 0.75 || swapCount <= directCount || runGeneration !== _reniecRunGeneration) return;
 
     // Consistent swap detected: fix all records that RENIEC didn't verify
     let fixed = 0;
+    let exportInvalidated = false;
     state.records.forEach(r => {
-        if (r.reniecOk !== true) {
+        const hasUntouchedProvenance = r.filenameNombres !== undefined && r.filenameApellidos !== undefined &&
+            r.nombres === r.filenameNombres && r.apellidos === r.filenameApellidos;
+        if (r.reniecOk !== true && hasUntouchedProvenance && r.nameSwapAutoFixed !== true) {
+            if (!exportInvalidated) {
+                invalidatePreflightReport();
+                exportInvalidated = true;
+            }
             const tmp  = r.nombres;
             r.nombres  = r.apellidos;
             r.apellidos = tmp;
+            r.nameSwapAutoFixed = true;
             fixed++;
         }
     });

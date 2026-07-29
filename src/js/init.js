@@ -1,6 +1,7 @@
 // ===================== INIT =====================
 
 document.addEventListener('DOMContentLoaded', async () => {
+    setupTauriCloseRequestHandling();
     refreshLucideIcons();
 
     setupFileHandlers();
@@ -9,10 +10,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     initializeEditorState();
     setupHistoryControls();
     setupMenuHandlers();
+    setupSecureClearAll();
     setupAppControls();
     setupSidebarActionControls();
-    setupReniecControls();
     setupModalControls();
+    setupPhotoImportStatusControls();
     setupKeyboardShortcuts();
     setupExportToolbarHandlers();
     initFilmstrip();
@@ -22,12 +24,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshExportStatsDisplay();
     const savedMode = localStorage.getItem('carnet-ui-mode') || 'simple';
     setUIMode(savedMode);
-    const savedToken = reniecTokenStore.get();
-    if (savedToken) {
-        const tokenInput = document.getElementById('field-reniec-token');
-        if (tokenInput) tokenInput.value = savedToken;
-    }
+    await initializeReniecTokenPersistence();
+    setupReniecControls();
     updateReniecTokenStatus();
+    await initializeSessionPersistence();
     setupFolderWatcher();
     await restoreSession();
     setupUpdateControls();
@@ -58,11 +58,22 @@ function manualCheckForUpdates() {
     const result = window.electronAPI.checkForUpdates();
 
     if (result && typeof result.then === 'function') {
-        // Tauri: Promise-based, resolves with true/false
-        result.then(found => {
+        // Tauri returns an explicit status so transport failures are not
+        // presented as "already current".
+        result.then(updateResult => {
             resetBtn();
-            if (!found && !bannerAlreadyVisible) showToast('Ya tienes la última versión instalada', 'success');
-        }).catch(resetBtn);
+            if (updateResult?.status === 'current' && !bannerAlreadyVisible) {
+                showToast('Ya tienes la última versión instalada', 'success');
+            } else if (updateResult?.status === 'error') {
+                showToast(`No se pudo buscar actualizaciones: ${updateResult.error || 'error desconocido'}`, 'error');
+            } else if (updateResult === false && !bannerAlreadyVisible) {
+                // Compatibility with the former Electron bridge.
+                showToast('Ya tienes la última versión instalada', 'success');
+            }
+        }).catch(err => {
+            resetBtn();
+            showToast(`No se pudo buscar actualizaciones: ${err?.message || err}`, 'error');
+        });
     } else {
         // Electron: fire-and-forget via IPC; check banner state after timeout
         setTimeout(() => {
@@ -72,6 +83,48 @@ function manualCheckForUpdates() {
             }
         }, 5000);
     }
+}
+
+function setupTauriCloseRequestHandling() {
+    const getCurrentWindow = window.__TAURI__?.window?.getCurrentWindow;
+    if (typeof getCurrentWindow !== 'function') return;
+    const appWindow = getCurrentWindow();
+    if (!appWindow || typeof appWindow.onCloseRequested !== 'function') return;
+
+    let finalizing = false;
+    let closeCalled = false;
+    appWindow.onCloseRequested(async event => {
+        event.preventDefault();
+        if (finalizing) return;
+        finalizing = true;
+        try {
+            await flushPendingSessionSave();
+        } catch (err) {
+            console.warn('[Sesión] No se pudo completar el guardado al cerrar:', err);
+        } finally {
+            clearPhotoStateForShutdown();
+            if (closeCalled) return;
+            closeCalled = true;
+            const closeWindow = typeof appWindow.destroy === 'function'
+                ? appWindow.destroy.bind(appWindow)
+                : appWindow.close?.bind(appWindow);
+            try {
+                await closeWindow?.();
+            } catch (err) {
+                console.error('[Tauri] No se pudo cerrar la ventana:', err);
+            }
+        }
+    }).catch(err => console.warn('[Tauri] No se pudo registrar el cierre seguro:', err));
+}
+
+function clearPhotoStateForShutdown() {
+    if (typeof clearPhotoCaches === 'function') clearPhotoCaches();
+    if (typeof state !== 'undefined') {
+        state.photoMeta = {};
+        state.photoImageInflight = new Map();
+        state.photoThumbnailInflight = new Map();
+    }
+    if (typeof revokePhotoObjectUrls === 'function') revokePhotoObjectUrls();
 }
 
 function setupUpdateBanner() {
@@ -129,5 +182,8 @@ function setupUpdateControls() {
 }
 
 window.addEventListener('beforeunload', () => {
-    revokePhotoObjectUrls();
+    // Browser storage writes synchronously before saveSession reaches its first
+    // await. Tauri uses the awaited close-request path above instead.
+    if (!window.__TAURI__) flushPendingSessionSave();
+    clearPhotoStateForShutdown();
 });

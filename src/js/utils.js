@@ -61,6 +61,17 @@ function revokePhotoObjectUrls() {
     state.photoObjectUrls = [];
 }
 
+function invalidatePendingWork() {
+    state.lifecycleGeneration++;
+    state.previewGeneration++;
+    state.templateLoadGeneration++;
+    state.dataLoadGeneration++;
+    state.photoImportGeneration++;
+    state.photoLoadGeneration++;
+    state.swatchGeneration++;
+    state.reniecGeneration++;
+}
+
 function toFloat(value, fallback = 0) {
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -128,9 +139,58 @@ function normalizeDNI(value) {
     return digits;
 }
 
+let _recordIdentityCounter = 0;
+
+function ensureRecordIdentity(record, preferredPhotoKey = '') {
+    if (!record) return '';
+    const photoKey = String(record.photoKey || record.dniKey || preferredPhotoKey || normalizeDNI(record.dni)).trim();
+    if (photoKey) {
+        const photoKeyDescriptor = Object.getOwnPropertyDescriptor(record, 'photoKey');
+        if (!photoKeyDescriptor || photoKeyDescriptor.configurable) {
+            Object.defineProperty(record, 'photoKey', {
+                value: photoKey,
+                enumerable: true,
+                writable: false,
+                configurable: false
+            });
+        }
+        record.dniKey = photoKey;
+    }
+    let recordId = record.recordId;
+    if (!recordId) {
+        _recordIdentityCounter++;
+        recordId = `record-${photoKey || 'unknown'}-${Date.now().toString(36)}-${_recordIdentityCounter.toString(36)}`;
+    }
+    const identityDescriptor = Object.getOwnPropertyDescriptor(record, 'recordId');
+    if (!identityDescriptor || identityDescriptor.configurable) {
+        Object.defineProperty(record, 'recordId', {
+            value: recordId,
+            enumerable: true,
+            writable: false,
+            configurable: false
+        });
+    }
+    return recordId;
+}
+
+function ensureRecordIdentities(records) {
+    (Array.isArray(records) ? records : []).forEach(record => ensureRecordIdentity(record));
+    return records;
+}
+
+function getRecordIdentity(record) {
+    return record ? ensureRecordIdentity(record) : '';
+}
+
 function getRecordKey(record) {
     if (!record) return '';
-    return record.dniKey || normalizeDNI(record.dni);
+    ensureRecordIdentity(record);
+    return record.photoKey || record.dniKey || normalizeDNI(record.dni);
+}
+
+function isCurrentRecordIdentity(recordId, lifecycleGeneration = state.lifecycleGeneration) {
+    return state.lifecycleGeneration === lifecycleGeneration &&
+        !!recordId && getRecordIdentity(state.records[state.currentIndex]) === recordId;
 }
 
 // ===================== UTILS =====================

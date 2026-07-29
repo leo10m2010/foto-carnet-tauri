@@ -432,6 +432,111 @@ input[type="file"][hidden],
   white-space: nowrap;
 }
 
+.photo-import-status {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(129, 140, 248, 0.18);
+  min-width: 0;
+}
+
+.photo-import-status[hidden] {
+  display: none;
+}
+
+.photo-import-status-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.photo-import-status-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.photo-import-status-copy strong {
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.photo-import-status-copy span,
+.photo-import-note {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.photo-import-cancel {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid rgba(129, 140, 248, 0.32);
+  border-radius: var(--radius-sm);
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.photo-import-cancel:hover {
+  border-color: rgba(129, 140, 248, 0.68);
+  background: rgba(30, 41, 59, 0.88);
+  color: var(--text-primary);
+}
+
+.photo-import-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.photo-import-progress-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-gradient);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--transition-normal);
+}
+
+.photo-import-note {
+  margin: 0;
+}
+
+.photo-import-status[data-state="ready"] .photo-import-status-copy strong {
+  color: #6ee7b7;
+}
+
+.photo-import-status[data-state="ready"] .photo-import-progress-fill {
+  background: var(--success);
+}
+
+.photo-import-status[data-state="cancelled"] .photo-import-status-copy strong {
+  color: var(--text-secondary);
+}
+
+.photo-import-status[data-state="error"] .photo-import-status-copy strong {
+  color: #fca5a5;
+}
+
+.photo-import-status[data-state="error"] .photo-import-progress {
+  display: none;
+}
+
 /* ===== FORM CONTROLS ===== */
 
 .form-group {
@@ -1917,6 +2022,11 @@ td.reniec-fixed-cell::after {
   flex-direction: column;
   align-items: center;
   gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
   flex-shrink: 0;
   transition: opacity var(--transition-fast), transform var(--transition-fast);
@@ -2123,13 +2233,16 @@ td.reniec-fixed-cell::after {
   justify-content: center;
   z-index: 9998;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity var(--transition-normal);
+  transition: opacity var(--transition-normal), visibility 0s linear var(--transition-normal);
 }
 
 .modal-overlay.active {
   opacity: 1;
+  visibility: visible;
   pointer-events: all;
+  transition-delay: 0s;
 }
 
 .modal-content {
@@ -2225,7 +2338,7 @@ td.reniec-fixed-cell::after {
 
 /* ===== RESPONSIVE ===== */
 
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   .app-container {
     flex-direction: column;
   }
@@ -2241,6 +2354,22 @@ td.reniec-fixed-cell::after {
 
   .main-area {
     height: 60vh;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .toolbar-left,
+  .toolbar-right {
+    width: 100%;
+    flex: 1 1 100%;
+    overflow: visible;
+  }
+
+  .toolbar-right {
+    justify-content: flex-end;
   }
 
   .editor-hud {
@@ -3259,6 +3388,43 @@ i[data-lucide] {
   line-height: 1.45;
 }
 
+.privacy-save-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(84, 166, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(84, 166, 255, 0.06);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.privacy-save-toggle input {
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  flex: 0 0 15px;
+  accent-color: #54a6ff;
+}
+
+.privacy-save-toggle span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.privacy-save-toggle strong {
+  color: var(--text-primary);
+  font-size: 0.77rem;
+}
+
+.privacy-save-toggle small {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
 .sidebar input[type="password"],
 .token-field input {
   width: 100%;
@@ -3521,6 +3687,46 @@ textarea:focus-visible,
   border-radius: 4px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .config-section,
+  .upload-zone,
+  .photo-import-cancel,
+  .modal-content,
+  .thumb-img-wrap,
+  .nav-btn,
+  .btn {
+    border-color: CanvasText;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible,
+  .filmstrip-thumb.is-active .thumb-img-wrap {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  .progress-bar .progress-fill,
+  .photo-import-progress-fill,
+  .status-dot.active {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+}
+
 /* Help / Shortcuts modal */
 .help-modal {
   max-width: 720px;
@@ -3733,4 +3939,22 @@ textarea:focus-visible,
   border-radius: 50%;
   background: currentColor;
 }
+}
+
+@media screen and (max-width: 960px) {
+  .toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .toolbar-left,
+  .toolbar-right {
+    width: 100%;
+    flex: 1 1 100%;
+    overflow: visible;
+  }
+
+  .toolbar-right {
+    justify-content: flex-end;
+  }
 }

@@ -43,7 +43,8 @@ function getBarcodeConfig() {
 
 function tryRender() {
     if (!state.templateImage || state.records.length === 0) return;
-    renderCarnet(state.currentIndex).then(() => {
+    renderCarnet(state.currentIndex).then(rendered => {
+        if (!rendered) return;
         if (!state.drag.active) drawSelectionOverlay();
         updateEditorHud();
     });
@@ -62,70 +63,269 @@ function getCurrentPhotoImage() {
     return getPhotoImageByKey(key);
 }
 
-async function getPhotoImageByKey(key) {
-    if (!key) return null;
-    const fromCache = state.photoImageCache.get(key);
-    if (fromCache) return fromCache;
+function _isBrowserPhotoSource(source) {
+    return typeof source === 'string' && (source.startsWith('blob:') || source.startsWith('data:'));
+}
 
-    let source = state.photosMap[key];
+function _photoCacheKey(key, sourceVersion, variant) {
+    return JSON.stringify([String(key), sourceVersion, variant]);
+}
 
-    // Session restore: if photosMap only has a file path (not a blob/data URL),
-    // read from disk via Electron IPC and create a proper object URL.
-    if (source && !source.startsWith('blob:') && !source.startsWith('data:')
-            && window.electronAPI?.readFileAsDataURL) {
-        const result = await window.electronAPI.readFileAsDataURL(source);
-        if (result.ok) {
-            try {
-                // Convert data URL → blob URL without going through fetch/HTTP stack
-                const [header, b64] = result.dataUrl.split(',');
-                const mime = header.match(/:(.*?);/)[1];
-                const bytes = atob(b64);
-                const arr = new Uint8Array(bytes.length);
-                for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-                const objUrl = URL.createObjectURL(new Blob([arr], { type: mime }));
-                state.photosMap[key] = objUrl;
-                state.photoObjectUrls.push(objUrl);
-                source = objUrl;
-            } catch (_) {
-                state.photosMap[key] = result.dataUrl;
-                source = result.dataUrl;
-            }
-        } else if (!window.__TAURI__) {
-            // IPC failed — try file:// URL as last resort (works in Electron, blocked in WebView2)
-            source = 'file:///' + source.replace(/\\/g, '/').replace(/^\/+/, '');
-        } else {
-            source = null; // In Tauri/WebView2, file:// is blocked by CSP — give up
+function _cacheKeyMatchesPhoto(cacheKey, key) {
+    try {
+        return JSON.parse(cacheKey)[0] === String(key);
+    } catch (_) {
+        return false;
+    }
+}
+
+function _nextPhotoSourceVersion(sourceVersion) {
+    return Number.isSafeInteger(sourceVersion)
+        ? sourceVersion + 1
+        : `${sourceVersion || 'source'}#invalidated`;
+}
+
+function _getPhotoMeta(key) {
+    if (!state.photoMeta) state.photoMeta = {};
+    const source = state.photosMap?.[key] || '';
+    const filePath = state.photoPaths?.[key] || '';
+    const previous = state.photoMeta[key];
+    if (previous && (previous.source !== source || previous.filePath !== filePath)) {
+        invalidatePhotoCachesForKey(key);
+        return state.photoMeta[key];
+    }
+    if (!previous) {
+        state.photoMeta[key] = { source, filePath, sourceVersion: 1 };
+    }
+    return state.photoMeta[key];
+}
+
+function invalidatePhotoCachesForKey(key) {
+    if (!key) return;
+    if (!state.photoMeta) state.photoMeta = {};
+    const previous = state.photoMeta[key] || {};
+    state.photoMeta[key] = {
+        ...previous,
+        source: state.photosMap?.[key] || '',
+        filePath: state.photoPaths?.[key] || '',
+        sourceVersion: _nextPhotoSourceVersion(previous.sourceVersion)
+    };
+    state.photoImageCache?.deleteWhere((_, cacheKey) => _cacheKeyMatchesPhoto(cacheKey, key));
+    state.photoThumbnailCache?.deleteWhere((_, cacheKey) => _cacheKeyMatchesPhoto(cacheKey, key));
+    [state.photoImageInflight, state.photoThumbnailInflight].forEach(inflight => {
+        if (!inflight) return;
+        Array.from(inflight.keys()).forEach(cacheKey => {
+            if (_cacheKeyMatchesPhoto(cacheKey, key)) inflight.delete(cacheKey);
+        });
+    });
+    if (state.photoFaceBoxes) delete state.photoFaceBoxes[key];
+}
+
+function clearPhotoCaches() {
+    state.photoImageCache?.clear();
+    state.photoThumbnailCache?.clear();
+    state.photoImageInflight?.clear();
+    state.photoThumbnailInflight?.clear();
+    state.photoMeta = {};
+    state.photoImageInflight = new Map();
+    state.photoThumbnailInflight = new Map();
+}
+
+function _createCacheOwnedObjectUrl(dataUrl) {
+    if (!dataUrl || typeof URL.createObjectURL !== 'function') {
+        return { source: dataUrl, objectUrl: null };
+    }
+    try {
+        const commaIndex = dataUrl.indexOf(',');
+        const header = dataUrl.slice(0, commaIndex);
+        const payload = dataUrl.slice(commaIndex + 1);
+        const mime = header.match(/^data:([^;,]+)/)?.[1] || 'application/octet-stream';
+        const decoded = header.includes(';base64') ? atob(payload) : decodeURIComponent(payload);
+        const bytes = new Uint8Array(decoded.length);
+        for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i);
+        const objectUrl = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        return { source: objectUrl, objectUrl };
+    } catch (_) {
+        return { source: dataUrl, objectUrl: null };
+    }
+}
+
+function _estimateDecodedImageBytes(img) {
+    const width = img.naturalWidth || img.width || 1;
+    const height = img.naturalHeight || img.height || 1;
+    return Math.max(4, width * height * 4);
+}
+
+function _releasePhotoObjectUrl(img) {
+    const objectUrl = img?._cacheObjectUrl;
+    if (!objectUrl) return;
+    try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+    img._cacheObjectUrl = null;
+}
+
+async function _createBrowserThumbnailSource(img, maxSize = 200) {
+    const sourceW = img.naturalWidth || img.width;
+    const sourceH = img.naturalHeight || img.height;
+    if (!sourceW || !sourceH || typeof document?.createElement !== 'function' ||
+        typeof URL.createObjectURL !== 'function') return null;
+
+    const scale = Math.min(1, maxSize / Math.max(sourceW, sourceH));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sourceW * scale));
+    canvas.height = Math.max(1, Math.round(sourceH * scale));
+    const ctx = canvas.getContext?.('2d');
+    if (!ctx || typeof canvas.toBlob !== 'function') return null;
+
+    try {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+        if (!blob) return null;
+        const objectUrl = URL.createObjectURL(blob);
+        return { source: objectUrl, objectUrl };
+    } catch (_) {
+        return null;
+    } finally {
+        canvas.width = 0;
+        canvas.height = 0;
+    }
+}
+
+function _isPhotoRequestStale(key, meta, photoLoadGeneration, lifecycleGeneration) {
+    return state.photoLoadGeneration !== photoLoadGeneration ||
+        state.lifecycleGeneration !== lifecycleGeneration ||
+        state.photoMeta?.[key]?.sourceVersion !== meta.sourceVersion ||
+        state.photosMap?.[key] !== meta.source ||
+        (state.photoPaths?.[key] || '') !== meta.filePath;
+}
+
+async function _resolvePhotoLoadSource(meta, variant) {
+    const api = window.electronAPI;
+    const sourceIsPath = meta.source && !_isBrowserPhotoSource(meta.source);
+    const nativePath = variant === 'thumbnail'
+        ? (meta.filePath || (sourceIsPath ? meta.source : ''))
+        : (sourceIsPath ? meta.source : '');
+    const readNative = variant === 'thumbnail' ? api?.readAsThumbnail : api?.readFileAsDataURL;
+
+    if (nativePath && readNative) {
+        try {
+            const result = variant === 'thumbnail'
+                ? await readNative(nativePath, 200)
+                : await readNative(nativePath);
+            if (result?.ok && result.dataUrl) return _createCacheOwnedObjectUrl(result.dataUrl);
+        } catch (_) {}
+
+        if (!_isBrowserPhotoSource(meta.source)) {
+            if (window.__TAURI__) return { source: null, objectUrl: null };
+            return {
+                source: 'file:///' + nativePath.replace(/\\/g, '/').replace(/^\/+/, ''),
+                objectUrl: null
+            };
         }
     }
 
-    if (!source) return null;
+    return { source: meta.source || null, objectUrl: null };
+}
 
-    return new Promise((resolve) => {
+function _loadResolvedPhotoImage(key, resolved, isStale) {
+    return new Promise(resolve => {
         const img = new Image();
+        img._cacheObjectUrl = resolved.objectUrl;
         let settled = false;
-        // 10s safety net in case the source is corrupt or the WebView decoder
-        // stalls without firing load/error (rare but has been seen in WebView2).
-        const timer = setTimeout(() => {
+        const finish = value => {
             if (settled) return;
             settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        };
+        const timer = setTimeout(() => {
             console.warn('[Photo] Timeout cargando imagen para key', key);
-            resolve(null);
+            disposeCachedPhotoImage(img);
+            finish(null);
         }, 10000);
         img.onload = () => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            state.photoImageCache.set(key, img);
-            resolve(img);
+            if (isStale()) {
+                disposeCachedPhotoImage(img);
+                finish(null);
+                return;
+            }
+            img.onload = null;
+            img.onerror = null;
+            finish(img);
         };
         img.onerror = () => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            resolve(null);
+            disposeCachedPhotoImage(img);
+            finish(null);
         };
-        img.src = source;
+        img.src = resolved.source;
     });
+}
+
+async function _loadPhotoImage(key, meta, variant, cache, cacheKey) {
+    const photoLoadGeneration = state.photoLoadGeneration;
+    const lifecycleGeneration = state.lifecycleGeneration;
+    const resolved = await _resolvePhotoLoadSource(meta, variant);
+    const isStale = () => _isPhotoRequestStale(
+        key,
+        meta,
+        photoLoadGeneration,
+        lifecycleGeneration
+    );
+    if (isStale() || !resolved.source) {
+        if (resolved.objectUrl) URL.revokeObjectURL(resolved.objectUrl);
+        return null;
+    }
+
+    let img = await _loadResolvedPhotoImage(key, resolved, isStale);
+    if (!img) return null;
+
+    if (variant === 'thumbnail' && _isBrowserPhotoSource(meta.source) && !meta.filePath) {
+        const thumbnailSource = await _createBrowserThumbnailSource(img);
+        if (isStale()) {
+            disposeCachedPhotoImage(img);
+            if (thumbnailSource?.objectUrl) URL.revokeObjectURL(thumbnailSource.objectUrl);
+            return null;
+        }
+        if (thumbnailSource) {
+            const thumbnailImg = await _loadResolvedPhotoImage(key, thumbnailSource, isStale);
+            if (thumbnailImg) {
+                disposeCachedPhotoImage(img);
+                img = thumbnailImg;
+            }
+        }
+    }
+
+    if (isStale()) {
+        disposeCachedPhotoImage(img);
+        return null;
+    }
+    const cached = cache.set(cacheKey, img, _estimateDecodedImageBytes(img));
+    if (cached && variant === 'preview') cache.setAlias(String(key), cacheKey);
+    if (!cached) _releasePhotoObjectUrl(img);
+    return img;
+}
+
+function getPhotoImageByKey(key, options = {}) {
+    if (!key) return Promise.resolve(null);
+    const variant = options.variant === 'thumbnail' ? 'thumbnail' : 'preview';
+    const meta = _getPhotoMeta(key);
+    if (!meta.source && !meta.filePath) return Promise.resolve(null);
+    const cache = variant === 'thumbnail' ? state.photoThumbnailCache : state.photoImageCache;
+    const inflight = variant === 'thumbnail'
+        ? state.photoThumbnailInflight
+        : state.photoImageInflight;
+    const cacheKey = _photoCacheKey(key, meta.sourceVersion, variant);
+    const cached = cache.get(cacheKey);
+    if (cached) return Promise.resolve(cached);
+    if (inflight.has(cacheKey)) return inflight.get(cacheKey);
+
+    const request = _loadPhotoImage(key, meta, variant, cache, cacheKey)
+        .finally(() => {
+            if (inflight.get(cacheKey) === request) inflight.delete(cacheKey);
+        });
+    inflight.set(cacheKey, request);
+    return request;
 }
 
 async function detectPrimaryFace(photoImg, cacheKey = '') {
@@ -139,12 +339,19 @@ async function detectPrimaryFace(photoImg, cacheKey = '') {
         return null;
     }
 
+    const photoLoadGeneration = state.photoLoadGeneration;
+    const cacheResult = value => {
+        if (cacheKey && state.photoLoadGeneration === photoLoadGeneration) {
+            state.photoFaceBoxes[cacheKey] = value;
+        }
+        return value;
+    };
+
     try {
         const detector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
         const faces = await detector.detect(photoImg);
         if (!faces || !faces.length || !faces[0].boundingBox) {
-            if (cacheKey) state.photoFaceBoxes[cacheKey] = null;
-            return null;
+            return cacheResult(null);
         }
 
         const box = faces[0].boundingBox;
@@ -154,11 +361,9 @@ async function detectPrimaryFace(photoImg, cacheKey = '') {
             width: Math.max(1, toFloat(box.width, 1)),
             height: Math.max(1, toFloat(box.height, 1))
         };
-        if (cacheKey) state.photoFaceBoxes[cacheKey] = normalized;
-        return normalized;
+        return cacheResult(normalized);
     } catch (_) {
-        if (cacheKey) state.photoFaceBoxes[cacheKey] = null;
-        return null;
+        return cacheResult(null);
     }
 }
 
@@ -298,6 +503,7 @@ function setPhotoBgColor(color) {
     invalidatePreflightReport();
     savePhotoConfigFromDOM();
     syncHudPhotoControls(getPhotoConfig());
+    saveSessionDebounced();
     tryRender();
 }
 
@@ -309,6 +515,7 @@ function togglePhotoBgFromHud(enabled) {
     invalidatePreflightReport();
     savePhotoConfigFromDOM();
     syncHudPhotoControls(getPhotoConfig());
+    saveSessionDebounced();
     tryRender();
 }
 
@@ -332,18 +539,21 @@ function startPhotoColorPick() {
 }
 
 async function autoPickPhotoBgColor() {
+    const record = getCurrentRecord();
+    if (!record) return;
+    const recordId = getRecordIdentity(record);
+    const lifecycleGeneration = state.lifecycleGeneration;
     const photoImg = await getCurrentPhotoImage();
+    if (!isCurrentRecordIdentity(recordId, lifecycleGeneration)) return;
     if (!photoImg) {
         showToast('No se pudo leer la foto actual para muestrear color', 'error');
         return;
     }
 
-    const samplePoints = [
+    const colors = samplePhotoColors(photoImg, [
         [0.12, 0.10], [0.5, 0.08], [0.88, 0.10],
         [0.18, 0.22], [0.82, 0.22], [0.5, 0.18]
-    ];
-
-    const colors = samplePhotoColors(photoImg, samplePoints);
+    ]);
     let r = 0, g = 0, b = 0;
     colors.forEach(c => {
         r += Number.parseInt(c.slice(1, 3), 16);
@@ -363,14 +573,15 @@ async function autoFrameCurrentPhoto() {
 
     const record = getCurrentRecord();
     if (!record) return;
+    const recordId = getRecordIdentity(record);
+    const lifecycleGeneration = state.lifecycleGeneration;
     const key = getRecordKey(record);
     const photoImg = await getPhotoImageByKey(key);
+    if (!isCurrentRecordIdentity(recordId, lifecycleGeneration)) return;
     if (!photoImg) {
         showToast('No se pudo abrir la foto para auto-encuadre', 'error');
         return;
     }
-
-    pushUndoSnapshot('photo-auto-frame');
 
     const cfg = getPhotoConfig();
     const sourceW = photoImg.naturalWidth || photoImg.width;
@@ -387,9 +598,10 @@ async function autoFrameCurrentPhoto() {
     const bgEnableInput = document.getElementById('field-photo-bg-enable');
     if (!fitInput || !scaleInput || !offsetXInput || !offsetYInput) return;
 
-    fitInput.value = 'cover';
-
     const face = await detectPrimaryFace(photoImg, key);
+    if (!isCurrentRecordIdentity(recordId, lifecycleGeneration)) return;
+    pushUndoSnapshot('photo-auto-frame');
+    fitInput.value = 'cover';
     if (face) {
         const baseScale = Math.max(cfg.w / sourceW, cfg.h / sourceH);
         const targetFaceWidth = cfg.w * 0.38;
@@ -424,22 +636,41 @@ async function autoFrameCurrentPhoto() {
 
     if (bgEnableInput && !bgEnableInput.checked) {
         bgEnableInput.checked = true;
-        await autoPickPhotoBgColor();
+        const colors = samplePhotoColors(photoImg, [
+            [0.12, 0.10], [0.5, 0.08], [0.88, 0.10],
+            [0.18, 0.22], [0.82, 0.22], [0.5, 0.18]
+        ]);
+        let r = 0, g = 0, b = 0;
+        colors.forEach(color => {
+            r += Number.parseInt(color.slice(1, 3), 16);
+            g += Number.parseInt(color.slice(3, 5), 16);
+            b += Number.parseInt(color.slice(5, 7), 16);
+        });
+        const colorInput = document.getElementById('field-photo-bg-color');
+        if (colorInput) colorInput.value = rgbToHex(r / colors.length, g / colors.length, b / colors.length);
     }
 
     savePhotoConfigFromDOM();
     syncHudPhotoControls(getPhotoConfig());
     invalidatePreflightReport();
+    saveSessionDebounced();
     tryRender();
 }
 
 async function updatePhotoSwatches() {
     const container = document.getElementById('editor-hud-swatches');
     if (!container) return;
+    const record = getCurrentRecord();
+    const recordId = record ? getRecordIdentity(record) : '';
+    const lifecycleGeneration = state.lifecycleGeneration;
+    const swatchGeneration = ++state.swatchGeneration;
+    const isStale = () => state.swatchGeneration !== swatchGeneration ||
+        !isCurrentRecordIdentity(recordId, lifecycleGeneration);
 
+    container.innerHTML = '';
     const photoImg = await getCurrentPhotoImage();
+    if (isStale()) return;
     if (!photoImg) {
-        container.innerHTML = '';
         return;
     }
 
@@ -462,7 +693,7 @@ async function updatePhotoSwatches() {
 }
 
 // Draws a text field on ctx, applying truncation and registering a hitbox.
-function drawTextField(ctx, text, cfg, id, targetCanvas) {
+function drawTextField(ctx, text, cfg, id, hitboxes) {
     const fontStr = `${cfg.bold} ${cfg.size}px ${cfg.font}`.trim();
     ctx.font = fontStr;
     ctx.fillStyle = cfg.color;
@@ -484,18 +715,48 @@ function drawTextField(ctx, text, cfg, id, targetCanvas) {
 
     ctx.fillText(displayText, cfg.x, cfg.y);
 
-    if (!targetCanvas) {
-        state.hitboxes.push({ id, x: hitX, y: cfg.y, w: textW, h: cfg.size });
+    if (hitboxes) {
+        hitboxes.push({ id, x: hitX, y: cfg.y, w: textW, h: cfg.size });
     }
 }
 
-function renderCarnet(index, targetCanvas, exportScale = 1) {
+let _photoPrefetchIdleHandle = null;
+
+function _scheduleAdjacentPhotoPrefetch(index) {
+    if (typeof window.requestIdleCallback !== 'function') return;
+    if (_photoPrefetchIdleHandle !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(_photoPrefetchIdleHandle);
+    }
+    const lifecycleGeneration = state.lifecycleGeneration;
+    _photoPrefetchIdleHandle = window.requestIdleCallback(() => {
+        _photoPrefetchIdleHandle = null;
+        if (state.lifecycleGeneration !== lifecycleGeneration || state.currentIndex !== index) return;
+        [index - 1, index + 1].forEach(adjacentIndex => {
+            const record = state.records[adjacentIndex];
+            if (!record) return;
+            getPhotoImageByKey(getRecordKey(record), { variant: 'preview' }).catch(() => {});
+        });
+    }, { timeout: 1200 });
+}
+
+function renderCarnet(index, targetCanvas, exportScale = 1, options = {}) {
     return new Promise((resolve) => {
         const record = state.records[index];
         if (!record) { resolve(null); return; }
 
         const template = state.templateImage;
+        if (!template) { resolve(null); return; }
         const canvas = targetCanvas || document.getElementById('carnet-canvas');
+        if (!canvas) { resolve(null); return; }
+        const isPreview = !targetCanvas;
+        const previewGeneration = isPreview ? ++state.previewGeneration : 0;
+        const lifecycleGeneration = state.lifecycleGeneration;
+        const recordId = getRecordIdentity(record);
+        const localHitboxes = isPreview ? [] : null;
+        const isStale = () => state.lifecycleGeneration !== lifecycleGeneration ||
+            (isPreview && state.previewGeneration !== previewGeneration) ||
+            state.records[index] !== record || getRecordIdentity(record) !== recordId ||
+            state.templateImage !== template;
         const ctx = canvas.getContext('2d');
 
         const newW = template.width * exportScale;
@@ -519,35 +780,41 @@ function renderCarnet(index, targetCanvas, exportScale = 1) {
 
         const drawTextsAndBarcode = () => {
             // --- PHOTO hitbox (for drag-and-drop) ---
-            if (!targetCanvas) {
-                state.hitboxes.push({
+            if (localHitboxes) {
+                localHitboxes.push({
                     id: 'photo',
                     x: photoConfig.x, y: photoConfig.y,
                     w: photoConfig.w, h: photoConfig.h
                 });
             }
 
-            drawTextField(ctx, record.nombres  || 'SIN NOMBRE',   getFieldConfig('nombres'),   'nombres',   targetCanvas);
-            drawTextField(ctx, record.apellidos || 'SIN APELLIDO', getFieldConfig('apellidos'), 'apellidos', targetCanvas);
+            drawTextField(ctx, record.nombres  || 'SIN NOMBRE',   getFieldConfig('nombres'),   'nombres',   localHitboxes);
+            drawTextField(ctx, record.apellidos || 'SIN APELLIDO', getFieldConfig('apellidos'), 'apellidos', localHitboxes);
             if (record.dni) {
                 const prefix = document.getElementById('field-dni-prefix')?.value || '';
-                drawTextField(ctx, prefix + record.dni, getFieldConfig('dni'), 'dni', targetCanvas);
+                drawTextField(ctx, prefix + record.dni, getFieldConfig('dni'), 'dni', localHitboxes);
             }
-            if (record.extra)    drawTextField(ctx, record.extra,    getFieldConfig('extra'),    'extra',    targetCanvas);
+            if (record.extra)    drawTextField(ctx, record.extra,    getFieldConfig('extra'),    'extra',    localHitboxes);
 
             // --- BARCODE ---
             if (record.dni) {
                 drawBarcode(ctx, record.dni);
-                if (!targetCanvas) {
+                if (localHitboxes) {
                     const bcfg = getBarcodeConfig();
                     const bcCenteredX = Math.round((ctx.canvas.width / (ctx.getTransform().a || 1) - bcfg.w) / 2);
-                    state.hitboxes.push({
+                    localHitboxes.push({
                         id: 'barcode',
                         x: bcCenteredX, y: bcfg.y,
                         w: bcfg.w, h: bcfg.h
                     });
                 }
             }
+
+            if (isStale()) {
+                resolve(null);
+                return;
+            }
+            if (localHitboxes) state.hitboxes = localHitboxes;
 
             // Show canvas
             canvas.style.display = 'block';
@@ -556,21 +823,25 @@ function renderCarnet(index, targetCanvas, exportScale = 1) {
             }
 
             // Apply zoom
-            if (!targetCanvas) {
+            if (isPreview) {
                 canvas.style.transform = `scale(${state.zoom})`;
                 canvas.style.transformOrigin = 'center center';
             }
 
-            if (!targetCanvas) updateNavigation();
+            if (isPreview) {
+                updateNavigation();
+                _scheduleAdjacentPhotoPrefetch(index);
+            }
             resolve(canvas);
         };
-
-        // Reset hitboxes before rendering
-        if (!targetCanvas) state.hitboxes = [];
 
 
         // Photo renders behind the template so transparent areas show through.
         const drawPhotoThenTemplate = (photoImg) => {
+            if (isStale()) {
+                resolve(null);
+                return;
+            }
             if (photoConfig.bgEnabled) {
                 ctx.save();
                 ctx.fillStyle = photoConfig.bgColor;
@@ -596,12 +867,16 @@ function renderCarnet(index, targetCanvas, exportScale = 1) {
             drawTextsAndBarcode();
         };
 
-        // Use getPhotoImageByKey so session-restored file paths load via IPC automatically
-        getPhotoImageByKey(photoKey).then(photoImg => {
+        // Export passes its already validated full-resolution image directly.
+        const photoRequest = Object.prototype.hasOwnProperty.call(options, 'photoImage')
+            ? Promise.resolve(options.photoImage)
+            : getPhotoImageByKey(photoKey, { variant: options.photoVariant });
+        photoRequest.then(photoImg => {
             drawPhotoThenTemplate(photoImg);
         }).catch(() => {
             // On any unexpected error, render without photo (avoids hanging Promise)
-            drawPhotoThenTemplate(null);
+            if (isStale()) resolve(null);
+            else drawPhotoThenTemplate(null);
         });
     });
 }

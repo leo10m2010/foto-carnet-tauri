@@ -22,14 +22,101 @@
     // persistir state.photoPaths y restaurar la sesión).
     const tauriPathByFileKey = new Map();
     const fileKeyOf = (f) => `${f.name}|${f.size}`;
+    const inputGenerations = new Map();
+    const inputGenerationKey = id => (id === 'input-photos-files' || id === 'input-photos-folder') ? 'photos' : id;
+    const nextInputGeneration = id => {
+        const key = inputGenerationKey(id);
+        const generation = (inputGenerations.get(key) || 0) + 1;
+        inputGenerations.set(key, generation);
+        return generation;
+    };
+    const isInputGenerationCurrent = (id, generation) => inputGenerations.get(inputGenerationKey(id)) === generation;
 
     // Callbacks registrados vía onUpdateAvailable
     const _updateCbs = [];
+    let _updateCheckGeneration = 0;
     function _fireUpdate(info) { _updateCbs.forEach(cb => { try { cb(info); } catch (_) {} }); }
+
+    const MAX_READ_BATCH_PATHS = 100;
+    const MAX_INSPECT_BATCH_PATHS = 1000;
+
+    function describeBridgeError(err) {
+        if (err && typeof err === 'object' && typeof err.message === 'string') return err.message;
+        return String(err || 'error desconocido');
+    }
+
+    function fileReadError(filePath, error) {
+        return {
+            ok: false,
+            filePath,
+            error: `No se pudo leer "${filePath}": ${describeBridgeError(error)}`,
+        };
+    }
+
+    async function readFilesBatchChunked(filePaths) {
+        if (!Array.isArray(filePaths)) throw new TypeError('readFilesBatch requiere un arreglo de rutas');
+        const chunks = [];
+        for (let start = 0; start < filePaths.length; start += MAX_READ_BATCH_PATHS) {
+            const paths = filePaths.slice(start, start + MAX_READ_BATCH_PATHS);
+            chunks.push(
+                invoke('read_files_batch', { filePaths: paths })
+                    .then(results => paths.map((filePath, index) => {
+                        const result = Array.isArray(results) ? results[index] : null;
+                        if (result?.ok) return result;
+                        if (result && typeof result === 'object') {
+                            return {
+                                ...result,
+                                ok: false,
+                                filePath,
+                                error: `No se pudo leer "${filePath}": ${describeBridgeError(result.error)}`,
+                            };
+                        }
+                        return fileReadError(filePath, 'el proceso nativo no devolvió un resultado');
+                    }))
+                    .catch(err => paths.map(filePath => fileReadError(filePath, err)))
+            );
+        }
+        return (await Promise.all(chunks)).flat();
+    }
+
+    async function inspectImageFilesChunked(filePaths) {
+        if (!Array.isArray(filePaths)) throw new TypeError('inspectImageFiles requiere un arreglo de rutas');
+        const chunks = [];
+        for (let start = 0; start < filePaths.length; start += MAX_INSPECT_BATCH_PATHS) {
+            const paths = filePaths.slice(start, start + MAX_INSPECT_BATCH_PATHS);
+            chunks.push(
+                invoke('inspect_image_files', { filePaths: paths })
+                    .then(results => paths.map((filePath, index) => {
+                        const result = Array.isArray(results) ? results[index] : null;
+                        if (result?.ok) return result;
+                        if (result && typeof result === 'object') {
+                            return {
+                                ...result,
+                                ok: false,
+                                filePath,
+                                error: `No se pudo inspeccionar "${filePath}": ${describeBridgeError(result.error)}`,
+                            };
+                        }
+                        return fileReadError(filePath, 'el proceso nativo no devolvió un resultado');
+                    }))
+                    .catch(err => paths.map(filePath => fileReadError(filePath, err)))
+            );
+        }
+        return (await Promise.all(chunks)).flat();
+    }
 
     window.electronAPI = {
         // RENIEC (CORS bloqueado en renderer → Rust)
         queryRENIEC: (dni, token) => invoke('reniec_query', { dni, token }),
+        getReniecToken: () => invoke('get_reniec_token'),
+        setReniecToken: (token) => invoke('set_reniec_token', { token }),
+        clearReniecToken: () => invoke('clear_reniec_token'),
+
+        // Persistencia sensible: Rust cifra la sesión y conserva la clave fuera del renderer.
+        saveSecureSession: (sessionJson) => invoke('save_secure_session', { sessionJson }),
+        loadSecureSession: () => invoke('load_secure_session'),
+        clearSecureSession: () => invoke('clear_secure_session'),
+        clearBackendCaches: () => invoke('clear_backend_caches'),
 
         // Lee un archivo por ruta como data URL (caché + validación de mtime)
         readFileAsDataURL: (filePath) => invoke('read_file_as_dataurl', { filePath }),
@@ -39,7 +126,10 @@
             invoke('read_as_thumbnail', { filePath, maxDim }),
 
         // Lee un lote de archivos en paralelo (rayon en Rust) — mucho más rápido que N llamadas
-        readFilesBatch: (filePaths) => invoke('read_files_batch', { filePaths }),
+        readFilesBatch: readFilesBatchChunked,
+
+        // Valida imágenes y devuelve solo metadatos; no transfiere sus bytes al renderer.
+        inspectImageFiles: inspectImageFilesChunked,
 
         // Devuelve el path guardado en el File por el dialog interceptor.
         // Preferimos el expando (si sobrevivió), con fallback al sidecar name|size
@@ -53,11 +143,27 @@
         // Registra callback para cuando haya actualización
         onUpdateAvailable: (cb) => { _updateCbs.push(cb); },
 
-        // Verifica actualizaciones manualmente — resuelve true si hay update, false si no
-        checkForUpdates: () =>
-            invoke('check_for_updates')
-                .then(info => { if (info) _fireUpdate(info); return !!info; })
-                .catch(() => false),
+        checkForUpdates: async () => {
+            const generation = ++_updateCheckGeneration;
+            try {
+                const result = await invoke('check_for_updates_detailed');
+                if (generation !== _updateCheckGeneration) {
+                    return { status: 'error', error: 'La búsqueda fue reemplazada por una más reciente' };
+                }
+                if (!result?.ok) {
+                    const error = result?.error?.message || result?.error || 'No se pudo consultar el servicio de actualizaciones';
+                    return { status: 'error', error: describeBridgeError(error) };
+                }
+                if (result.update) {
+                    _fireUpdate(result.update);
+                    return { status: 'available', update: result.update };
+                }
+                return { status: 'current' };
+            } catch (err) {
+                console.warn('[Tauri] No se pudo determinar si hay actualizaciones:', err);
+                return { status: 'error', error: describeBridgeError(err) };
+            }
+        },
 
         // Diálogo nativo "Guardar como" — devuelve la ruta elegida o null si cancela
         pickSavePath: (defaultName, filterName, extension) =>
@@ -91,10 +197,21 @@
             const listen = window.__TAURI__?.event?.listen;
             if (typeof listen !== 'function') return () => {};
             let unlistenFn = null;
+            let cancelled = false;
             listen('photo-folder-changed', (ev) => {
+                if (cancelled) return;
                 try { cb(ev?.payload || []); } catch (_) {}
-            }).then(fn => { unlistenFn = fn; }).catch(() => {});
-            return () => { try { unlistenFn?.(); } catch (_) {} };
+            }).then(fn => {
+                if (cancelled) {
+                    try { fn(); } catch (_) {}
+                } else {
+                    unlistenFn = fn;
+                }
+            }).catch(() => {});
+            return () => {
+                cancelled = true;
+                try { unlistenFn?.(); } catch (_) {}
+            };
         },
     };
 
@@ -113,23 +230,17 @@
         return new File([blob], name, { type: blob.type });
     }
 
-    async function pathsToFiles(paths) {
-        // Improvement 3: single IPC call → Rust reads all files in parallel (rayon).
-        let results;
-        try {
-            results = await invoke('read_files_batch', { filePaths: paths });
-        } catch (_) {
-            // Fallback: read one by one if batch command fails
-            results = await Promise.all(
-                paths.map(p => invoke('read_file_as_dataurl', { filePath: p }).catch(() => null))
-            );
-        }
+    async function pathsToFiles(paths, isCurrent = () => true) {
+        const results = await readFilesBatchChunked(paths);
+        if (!isCurrent()) return [];
 
         const files = await Promise.all(paths.map(async (path, i) => {
+            if (!isCurrent()) return null;
             const result = results[i];
             if (!result?.ok) return null;
             const name = path.replace(/\\/g, '/').split('/').pop();
             const file = await dataUrlToFile(result.dataUrl, name);
+            if (!isCurrent()) return null;
             file._tauriPath = path;
             tauriPathByFileKey.set(fileKeyOf(file), path);
             return file;
@@ -152,47 +263,53 @@
         }
     }
 
-    async function handleTemplateInput(input) {
+    async function handleTemplateInput(input, generation) {
+        const isCurrent = () => isInputGenerationCurrent(input.id, generation);
         const path = await invoke('pick_template_file').catch(err => {
-            reportPickerError('el selector de plantilla', err);
+            if (isCurrent()) reportPickerError('el selector de plantilla', err);
             return null;
         });
-        if (!path) return;
-        const files = await pathsToFiles([path]);
+        if (!path || !isCurrent()) return;
+        const files = await pathsToFiles([path], isCurrent);
+        if (!isCurrent()) return;
         injectFilesIntoInput(input, files);
     }
 
-    async function handlePhotosFilesInput(input) {
+    async function handlePhotosFilesInput(input, generation) {
+        const isCurrent = () => isInputGenerationCurrent(input.id, generation);
         const paths = await invoke('pick_photo_files').catch(err => {
-            reportPickerError('el selector de fotos', err);
+            if (isCurrent()) reportPickerError('el selector de fotos', err);
             return [];
         });
-        if (!paths.length) return;
-        if (paths.length > 5 && typeof showToast === 'function')
-            showToast(`Cargando ${paths.length} fotos…`, 'info');
-        const files = await pathsToFiles(paths);
-        injectFilesIntoInput(input, files);
+        if (!paths.length || !isCurrent()) return;
+        if (typeof window.handlePhotoPathSelection !== 'function') {
+            throw new Error('El manejador nativo de fotos no está disponible');
+        }
+        await window.handlePhotoPathSelection(paths, { isCurrent, source: 'file-picker' });
     }
 
-    async function handlePhotosFolderInput(input) {
+    async function handlePhotosFolderInput(input, generation) {
+        const isCurrent = () => isInputGenerationCurrent(input.id, generation);
         const paths = await invoke('pick_photos_from_folder').catch(err => {
-            reportPickerError('el selector de carpeta', err);
+            if (isCurrent()) reportPickerError('el selector de carpeta', err);
             return [];
         });
-        if (!paths.length) return;
-        if (paths.length > 5 && typeof showToast === 'function')
-            showToast(`Cargando ${paths.length} fotos…`, 'info');
-        const files = await pathsToFiles(paths);
-        injectFilesIntoInput(input, files);
+        if (!paths.length || !isCurrent()) return;
+        if (typeof window.handlePhotoPathSelection !== 'function') {
+            throw new Error('El manejador nativo de fotos no está disponible');
+        }
+        await window.handlePhotoPathSelection(paths, { isCurrent, source: 'folder-picker' });
     }
 
-    async function handleDataInput(input) {
+    async function handleDataInput(input, generation) {
+        const isCurrent = () => isInputGenerationCurrent(input.id, generation);
         const path = await invoke('pick_data_file').catch(err => {
-            reportPickerError('el selector de datos', err);
+            if (isCurrent()) reportPickerError('el selector de datos', err);
             return null;
         });
-        if (!path) return;
-        const files = await pathsToFiles([path]);
+        if (!path || !isCurrent()) return;
+        const files = await pathsToFiles([path], isCurrent);
+        if (!isCurrent()) return;
         injectFilesIntoInput(input, files);
     }
 
@@ -208,10 +325,11 @@
         if (!input) return;
         const handler = INPUT_HANDLERS[id];
         if (handler) {
+            const generation = nextInputGeneration(id);
             try {
-                await handler(input);
+                await handler(input, generation);
             } catch (err) {
-                reportPickerError('el selector de archivos', err);
+                if (isInputGenerationCurrent(id, generation)) reportPickerError('el selector de archivos', err);
             }
         } else {
             input.click();
@@ -222,8 +340,8 @@
         // ── Tauri native drag-drop ────────────────────────────────────────────
         // The browser-level `drop` event gives us File objects without real paths
         // (so session restore can't find the photos later). Tauri emits a separate
-        // event with the actual filesystem paths — route those through pathsToFiles
-        // so _tauriPath is set and paths persist.
+        // event with the actual filesystem paths, which are retained without
+        // materializing every photo in the renderer.
         setupTauriDragDrop();
     });
 
@@ -261,6 +379,8 @@
             }
             const input = zone.querySelector('input[type="file"]');
             if (!input) return;
+            const generation = nextInputGeneration(input.id);
+            const isCurrent = () => isInputGenerationCurrent(input.id, generation);
 
             let filtered = Array.isArray(paths) ? paths.slice() : [];
             if (input.id === 'input-template' || input.id === 'input-photos-files' || input.id === 'input-photos-folder') {
@@ -273,10 +393,19 @@
                 return;
             }
 
-            if (filtered.length > 5 && typeof showToast === 'function') {
-                showToast(`Cargando ${filtered.length} archivo${filtered.length > 1 ? 's' : ''}…`, 'info');
+            if ((input.id === 'input-photos-files' || input.id === 'input-photos-folder')) {
+                if (typeof window.handlePhotoPathSelection !== 'function') {
+                    throw new Error('El manejador nativo de fotos no está disponible');
+                }
+                if (filtered.length > 1000 && typeof showToast === 'function') {
+                    showToast('Solo se procesarán las primeras 1000 imágenes.', 'warning');
+                }
+                await window.handlePhotoPathSelection(filtered.slice(0, 1000), { isCurrent, source: 'drag-drop' });
+                return;
             }
-            const files = await pathsToFiles(filtered);
+
+            const files = await pathsToFiles(filtered.slice(0, 1), isCurrent);
+            if (!isCurrent()) return;
             injectFilesIntoInput(input, files);
         }
 

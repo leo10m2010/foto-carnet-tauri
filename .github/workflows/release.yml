@@ -5,64 +5,127 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release-windows:
+  quality:
+    name: Quality gate
     runs-on: windows-latest
-
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: '22.13.0'
+          cache: npm
 
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@191af2e1955bbe165f9bbacff2d2438002dff4d4 # 1.96.0
+        with:
+          components: clippy
+          targets: x86_64-pc-windows-msvc
 
       - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             src-tauri/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build Tauri (sin instalador — solo exe portable)
-        run: npx tauri build --config portable.conf.json
+      - name: Verify release tag and versions
+        run: npm run check:version -- --tag "${{ github.ref_name }}"
 
-      - name: Rename portable exe
-        shell: bash
+      - name: Run JS and Rust tests, Clippy, and tooling checks
+        run: npm run check
+
+  release-windows:
+    name: Build and publish Windows portable executable
+    needs: quality
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@191af2e1955bbe165f9bbacff2d2438002dff4d4 # 1.96.0
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('rust-toolchain.toml', 'src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build portable executable with Cargo lockfile
+        run: npm run build:portable
+
+      - name: Name artifact and create SHA-256 checksum
+        id: artifact
+        shell: pwsh
         run: |
-          TAG="${{ github.ref_name }}"
-          cp "src-tauri/target/release/foto-carnet-tauri.exe" \
-             "FotoCarnet-Tauri-${TAG}-Portable.exe"
+          $artifact = "FotoCarnet-Tauri-${{ github.ref_name }}-Portable.exe"
+          Copy-Item -LiteralPath "src-tauri/target/release/foto-carnet-tauri.exe" -Destination $artifact
+          $checksumFile = "$artifact.sha256"
+          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath $checksumFile -Value "$hash  $artifact" -Encoding ascii
+          $version = "${{ github.ref_name }}".Substring(1)
+          "artifact=$artifact" >> $env:GITHUB_OUTPUT
+          "checksum=$checksumFile" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Contains('-').ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Attest artifact provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: |
+            ${{ steps.artifact.outputs.artifact }}
+            ${{ steps.artifact.outputs.checksum }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           name: FotoCarnet Tauri ${{ github.ref_name }}
           body: |
-            ## FotoCarnet Tauri ${{ github.ref_name }}
+            Windows 10/11 portable build. WebView2 is required.
 
-            Versión Tauri — más ligera y rápida que la versión Electron (~8 MB vs ~120 MB).
-
-            ### Uso
-            Descarga el `.exe` y ejecútalo directamente — **no requiere instalación**.
-
-            > **Requisito:** Windows 10/11 con WebView2 instalado (ya incluido en Windows 11 y en Windows 10 con Edge actualizado).
-
-            > Si Windows muestra advertencia de seguridad, haz clic en **"Más información" → "Ejecutar de todas formas"**
-          files: FotoCarnet-Tauri-*-Portable.exe
+            Verify the download with the accompanying `.sha256` file and the GitHub artifact attestation. This build is not Authenticode-signed; code signing remains deferred until release credentials are provisioned.
+          files: |
+            ${{ steps.artifact.outputs.artifact }}
+            ${{ steps.artifact.outputs.checksum }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ steps.artifact.outputs.prerelease }}
           draft: false
-          prerelease: false

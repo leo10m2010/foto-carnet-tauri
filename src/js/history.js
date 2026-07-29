@@ -1,16 +1,30 @@
 function initializeEditorState() {
     state.globalPhotoConfig = readPhotoConfigFromInputs();
 
-    const editableFields = document.querySelectorAll('input[id^="field-"], select[id^="field-"]');
-    editableFields.forEach(field => {
-        if (field.type === 'checkbox') {
-            state.defaultFieldValues[field.id] = { type: 'checkbox', checked: !!field.checked };
-        } else {
-            state.defaultFieldValues[field.id] = { type: 'value', value: field.value };
-        }
-    });
+    if (Object.keys(state.defaultFieldValues).length === 0) {
+        const defaults = {};
+        const editableFields = document.querySelectorAll('input[id^="field-"], select[id^="field-"]');
+        editableFields.forEach(field => {
+            defaults[field.id] = field.type === 'checkbox'
+                ? Object.freeze({ type: 'checkbox', checked: !!field.checked })
+                : Object.freeze({ type: 'value', value: field.value });
+        });
+        state.defaultFieldValues = Object.freeze(defaults);
+    }
 
     updateEditorHud();
+}
+
+function restoreEditorDefaults() {
+    Object.entries(state.defaultFieldValues).forEach(([id, cfg]) => {
+        const field = document.getElementById(id);
+        if (!field) return;
+        if (cfg.type === 'checkbox') field.checked = !!cfg.checked;
+        else field.value = cfg.value;
+    });
+    state.globalPhotoConfig = readPhotoConfigFromInputs();
+    setPhotoIndividualModeControlValue(false);
+    syncHudPhotoControls(state.globalPhotoConfig);
 }
 
 function setUIMode(mode = 'simple') {
@@ -97,11 +111,14 @@ function applyTrackedInputState(values = {}) {
 }
 
 function createHistorySnapshot() {
+    ensureRecordIdentities(state.records);
+    const currentRecord = state.records[state.currentIndex];
     return {
         records: state.records.map(r => ({ ...r })),
         photoOverrides: JSON.parse(JSON.stringify(state.photoOverrides || {})),
         globalPhotoConfig: state.globalPhotoConfig ? { ...state.globalPhotoConfig } : null,
         currentIndex: state.currentIndex,
+        currentRecordId: currentRecord ? getRecordIdentity(currentRecord) : '',
         selectedId: state.drag.selectedId || null,
         inputValues: readTrackedInputState(),
         uiMode: state.uiMode
@@ -110,7 +127,7 @@ function createHistorySnapshot() {
 
 function getSnapshotSignature(snapshot) {
     try {
-        return JSON.stringify(snapshot);
+        return JSON.stringify(snapshot, (key, value) => key === '_approxBytes' ? undefined : value);
     } catch (_) {
         return `${Date.now()}-${Math.random()}`;
     }
@@ -134,7 +151,8 @@ function pushUndoSnapshot(reason = 'edit') {
 
     const snap = createHistorySnapshot();
     const sig = getSnapshotSignature(snap);
-    if (sig === state.history.lastSignature) return;
+    const previous = state.history.undoStack[state.history.undoStack.length - 1];
+    if (previous && getSnapshotSignature(previous) === sig) return;
 
     // Store the approx byte size alongside the snapshot so trim doesn't re-stringify.
     snap._approxBytes = sig.length;
@@ -151,11 +169,18 @@ function applyHistorySnapshot(snapshot) {
     state.history.suspend = true;
     try {
         state.records = Array.isArray(snapshot.records) ? snapshot.records.map(r => ({ ...r })) : [];
+        ensureRecordIdentities(state.records);
         state.photoOverrides = snapshot.photoOverrides ? JSON.parse(JSON.stringify(snapshot.photoOverrides)) : {};
         state.globalPhotoConfig = snapshot.globalPhotoConfig ? { ...snapshot.globalPhotoConfig } : null;
         applyTrackedInputState(snapshot.inputValues || {});
-        state.currentIndex = clamp(toInt(snapshot.currentIndex, 0), 0, Math.max(0, state.records.length - 1));
+        const stableIndex = snapshot.currentRecordId
+            ? state.records.findIndex(record => getRecordIdentity(record) === snapshot.currentRecordId)
+            : -1;
+        state.currentIndex = stableIndex >= 0
+            ? stableIndex
+            : clamp(toInt(snapshot.currentIndex, 0), 0, Math.max(0, state.records.length - 1));
         state.drag.selectedId = snapshot.selectedId || null;
+        state.hitboxes = [];
         setUIMode(snapshot.uiMode || state.uiMode || 'simple');
 
         showDataPreview();
@@ -168,6 +193,7 @@ function applyHistorySnapshot(snapshot) {
     }
 
     tryRender();
+    saveSessionDebounced();
 }
 
 function undoEdit() {
@@ -184,6 +210,7 @@ function undoEdit() {
     applyHistorySnapshot(previous);
     state.history.lastSignature = getSnapshotSignature(previous);
     updateHistoryButtons();
+    saveSessionDebounced();
 }
 
 function redoEdit() {
@@ -200,6 +227,7 @@ function redoEdit() {
     applyHistorySnapshot(next);
     state.history.lastSignature = getSnapshotSignature(next);
     updateHistoryButtons();
+    saveSessionDebounced();
 }
 
 function updateHistoryButtons() {

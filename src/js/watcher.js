@@ -4,6 +4,52 @@
 // tras un debounce de ~800 ms.
 
 let _watcherUnsubscribe = null;
+let _watcherGeneration = 0;
+let _watcherIngestQueue = Promise.resolve();
+
+function _sameWatchPath(a, b) {
+    const normalize = value => String(value || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    return normalize(a) === normalize(b);
+}
+
+function _invalidateWatcherPhotoCaches(key) {
+    const scope = typeof window !== 'undefined' ? window : globalThis;
+    const helper = typeof invalidatePhotoCachesForKey === 'function'
+        ? invalidatePhotoCachesForKey
+        : typeof invalidatePhotoCacheForKey === 'function'
+            ? invalidatePhotoCacheForKey
+            : scope.invalidatePhotoCachesForKey || scope.invalidatePhotoCacheForKey;
+    if (typeof helper === 'function') {
+        helper(key);
+        return;
+    }
+    if (typeof state.photoImageCache?.delete === 'function') {
+        state.photoImageCache.delete(key);
+    } else if (state.photoImageCache?._map && typeof state.photoImageCache._map.delete === 'function') {
+        state.photoImageCache._map.delete(key);
+    } else {
+        state.photoImageCache?.clear?.();
+    }
+    delete state.photoFaceBoxes[key];
+}
+
+function _isWatcherGenerationCurrent(generation, watchedPath, recordsRef) {
+    return generation === _watcherGeneration &&
+        !!state.watchedFolderPath &&
+        _sameWatchPath(state.watchedFolderPath, watchedPath) &&
+        state.records === recordsRef;
+}
+
+function _queueWatcherIngestion(paths, silent, generation, watchedPath, options = {}) {
+    const recordsRef = state.records;
+    const run = () => {
+        const importGeneration = options.showImportStatus ? ++state.photoImportGeneration : null;
+        return _ingestNewPhotoPaths(paths, silent, generation, watchedPath, recordsRef, importGeneration, options);
+    };
+    const queued = _watcherIngestQueue.then(run, run);
+    _watcherIngestQueue = queued.catch(err => console.warn('[watcher] Error en cola de ingesta:', err));
+    return queued;
+}
 
 function setupFolderWatcher() {
     document.querySelectorAll('[data-watch-folder]').forEach(btn => {
@@ -17,9 +63,24 @@ function setupFolderWatcher() {
     if (!window.electronAPI?.onWatchedFolderChange) return;
 
     // Suscripción única al evento — los paths llegan agrupados por debounce.
-    _watcherUnsubscribe = window.electronAPI.onWatchedFolderChange(async (paths) => {
+    _watcherUnsubscribe = window.electronAPI.onWatchedFolderChange((paths) => {
         if (!Array.isArray(paths) || !paths.length) return;
-        await ingestNewPhotoPaths(paths);
+        const generation = _watcherGeneration;
+        const watchedPath = state.watchedFolderPath;
+        if (!watchedPath) return;
+        _queueWatcherIngestion(paths, false, generation, watchedPath).catch(() => {});
+    });
+
+    document.querySelectorAll('[data-app-action="clear"]').forEach(btn => {
+        if (btn.dataset.watcherClearBound === '1') return;
+        btn.dataset.watcherClearBound = '1';
+        btn.addEventListener('click', () => {
+            setTimeout(() => {
+                const wasCleared = !state.templateImage && state.records.length === 0 &&
+                    (!Array.isArray(state.csvRows) || state.csvRows.length === 0);
+                if (wasCleared && state.watchedFolderPath) stopWatchingFolder(true);
+            }, 0);
+        });
     });
 }
 
@@ -47,26 +108,37 @@ async function pickAndStartWatchingFolder() {
 
 async function startWatchingFolder(path) {
     if (!window.electronAPI?.watchFolder) return;
+    if (typeof path !== 'string' || !path.trim()) return;
+
+    const watchedPath = path.trim();
+    const generation = ++_watcherGeneration;
 
     try {
-        await window.electronAPI.watchFolder(path);
+        await window.electronAPI.watchFolder(watchedPath);
     } catch (err) {
+        if (generation !== _watcherGeneration) return;
         console.warn('[watcher] No se pudo vigilar la carpeta:', err);
         showToast(`No se pudo vigilar: ${err}`, 'error');
         return;
     }
+    if (generation !== _watcherGeneration) return;
 
-    state.watchedFolderPath = path;
+    state.watchedFolderPath = watchedPath;
     updateWatcherUI();
     saveSessionDebounced();
+    const recordsRef = state.records;
 
     // Escaneo inicial: ingesta cualquier foto ya presente que no esté en records.
     try {
-        const existing = await window.electronAPI.listFolderImages(path);
+        const existing = await window.electronAPI.listFolderImages(watchedPath);
+        if (generation !== _watcherGeneration || !_sameWatchPath(state.watchedFolderPath, watchedPath) || state.records !== recordsRef) return;
         if (existing?.length) {
-            const ingested = await ingestNewPhotoPaths(existing, /*silent*/ true);
+            const ingested = await ingestNewPhotoPaths(existing, /*silent*/ true, generation, watchedPath, {
+                showImportStatus: true
+            });
+            if (generation !== _watcherGeneration) return;
             if (ingested > 0) {
-                showToast(`Vigilando carpeta — ${ingested} foto${ingested !== 1 ? 's' : ''} importada${ingested !== 1 ? 's' : ''}`, 'success');
+                showToast(`Vigilando carpeta — ${ingested} foto${ingested !== 1 ? 's' : ''} procesada${ingested !== 1 ? 's' : ''}`, 'success');
             } else {
                 showToast(`Vigilando carpeta (sin fotos nuevas)`, 'info');
             }
@@ -78,14 +150,15 @@ async function startWatchingFolder(path) {
     }
 }
 
-async function stopWatchingFolder() {
+async function stopWatchingFolder(silent = false) {
+    ++_watcherGeneration;
+    state.watchedFolderPath = null;
     if (window.electronAPI?.unwatchFolder) {
         try { await window.electronAPI.unwatchFolder(); } catch (_) {}
     }
-    state.watchedFolderPath = null;
     updateWatcherUI();
     saveSessionDebounced();
-    showToast('Vigilancia de carpeta detenida', 'info');
+    if (!silent) showToast('Vigilancia de carpeta detenida', 'info');
 }
 
 function updateWatcherUI() {
@@ -117,83 +190,153 @@ function _shortenPath(p, max) {
 }
 
 // Ingesta paths nuevos en state.records sin resetear lo existente.
-// Devuelve la cantidad de fotos efectivamente añadidas (omite duplicados por dniKey).
-async function ingestNewPhotoPaths(paths, silent = false) {
-    if (!window.electronAPI?.readFilesBatch) return 0;
+// Devuelve la cantidad de fotos añadidas o actualizadas.
+function ingestNewPhotoPaths(paths, silent = false, generation = _watcherGeneration, watchedPath = state.watchedFolderPath, options = {}) {
+    if (!watchedPath) return Promise.resolve(0);
+    return _queueWatcherIngestion(paths, silent, generation, watchedPath, options);
+}
+
+async function _ingestNewPhotoPaths(paths, silent, generation, watchedPath, recordsRef, importGeneration = null, options = {}) {
+    if (!window.electronAPI?.inspectImageFiles) return 0;
+    const isCurrent = () => _isWatcherGenerationCurrent(generation, watchedPath, recordsRef) &&
+        (importGeneration === null || state.photoImportGeneration === importGeneration);
+    if (!isCurrent()) return 0;
 
     const imageRe = /\.(jpg|jpeg|png|gif|bmp|webp)$/i;
-    const candidates = paths.filter(p => imageRe.test(p));
+    const folderPrefix = String(watchedPath).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() + '/';
+    const candidates = paths.filter(p => {
+        const normalized = String(p || '').replace(/\\/g, '/').toLowerCase();
+        return imageRe.test(normalized) && normalized.startsWith(folderPrefix);
+    });
     if (!candidates.length) return 0;
 
-    // Filtra duplicados: si ya existe un record con este dniKey, lo omitimos.
-    const existingKeys = new Set(state.records.map(r => r.dniKey));
-    const fresh = [];
+    const existingByKey = new Map(state.records.map(record => [getRecordKey(record), record]));
+    const incomingByKey = new Map();
     for (const fullPath of candidates) {
         const fileName = fullPath.replace(/\\/g, '/').split('/').pop();
         const parsed   = parsePhotoFilename(fileName);
         const dniKey   = parsed.dniKey || normalizeDNI(parsed.dni);
-        if (existingKeys.has(dniKey)) continue;
-        existingKeys.add(dniKey);
-        fresh.push({ fullPath, fileName, parsed, dniKey });
+        if (!dniKey) continue;
+        incomingByKey.set(dniKey, { fullPath, fileName, parsed, dniKey, existing: existingByKey.get(dniKey) || null });
     }
-    if (!fresh.length) return 0;
+    const incoming = Array.from(incomingByKey.values());
+    if (!incoming.length) return 0;
+    const duplicateCount = Math.max(0, candidates.length - incoming.length);
 
-    if (!silent && fresh.length > 3) {
-        showToast(`Importando ${fresh.length} foto${fresh.length !== 1 ? 's' : ''} nueva${fresh.length !== 1 ? 's' : ''}…`, 'info');
+    if (options.showImportStatus) {
+        showPhotoImportProgress(
+            'Inspeccionando carpeta vinculada',
+            `${formatPhotoImportCount(incoming.length)} foto${incoming.length !== 1 ? 's' : ''} encontrada${incoming.length !== 1 ? 's' : ''}`,
+            20
+        );
+    }
+
+    if (!silent && incoming.length > 3) {
+        showToast(`Procesando ${incoming.length} foto${incoming.length !== 1 ? 's' : ''}…`, 'info');
     }
 
     let results;
     try {
-        results = await window.electronAPI.readFilesBatch(fresh.map(f => f.fullPath));
+        results = await window.electronAPI.inspectImageFiles(incoming.map(f => f.fullPath));
     } catch (err) {
-        console.warn('[watcher] Error leyendo lote:', err);
+        console.warn('[watcher] Error inspeccionando lote:', err);
+        if (options.showImportStatus && isCurrent()) {
+            showPhotoImportError('No se pudo leer la carpeta vinculada. Comprueba que siga disponible y vuelve a vincularla.');
+        }
         return 0;
+    }
+    if (!isCurrent()) return 0;
+    if (!Array.isArray(results)) {
+        if (options.showImportStatus) {
+            showPhotoImportError('La carpeta no devolvió resultados válidos. Vuelve a vincularla e inténtalo de nuevo.');
+        }
+        return 0;
+    }
+
+    if (options.showImportStatus) {
+        showPhotoImportProgress(
+            'Preparando registros',
+            `${formatPhotoImportCount(incoming.length)} foto${incoming.length !== 1 ? 's' : ''} inspeccionada${incoming.length !== 1 ? 's' : ''}`,
+            75
+        );
     }
 
     state.globalPhotoConfig = state.globalPhotoConfig || readPhotoConfigFromInputs();
 
     let added = 0;
-    for (let i = 0; i < fresh.length; i++) {
+    let updated = 0;
+    let exportInvalidated = false;
+    state.photoMeta = state.photoMeta || {};
+    const selectedRecord = state.records[state.currentIndex] || null;
+    const selectedKey = getRecordKey(selectedRecord);
+    for (let i = 0; i < incoming.length; i++) {
+        if (!isCurrent()) return added;
         const result = results[i];
         if (!result?.ok) continue;
 
-        const { fullPath, parsed, dniKey } = fresh[i];
-
-        // Convierte dataURL → blob URL para evitar tener data: en RAM al renderizar.
-        let objUrl = result.dataUrl;
-        try {
-            const [header, b64] = result.dataUrl.split(',');
-            const mime  = header.match(/:(.*?);/)[1];
-            const bytes = atob(b64);
-            const arr   = new Uint8Array(bytes.length);
-            for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
-            objUrl = URL.createObjectURL(new Blob([arr], { type: mime }));
-            state.photoObjectUrls.push(objUrl);
-        } catch (_) {
-            // Fallback: usa la dataURL directamente
+        const { fullPath, parsed, dniKey, existing } = incoming[i];
+        const previousMeta = state.photoMeta[dniKey];
+        const previousPath = state.photoPaths[dniKey] || state.photosMap[dniKey] || '';
+        if (_sameWatchPath(previousPath, fullPath) &&
+                previousMeta?.sourceVersion === result.sourceVersion) {
+            continue;
         }
 
-        state.photosMap[dniKey]  = objUrl;
+        if (!exportInvalidated) {
+            invalidatePreflightReport();
+            exportInvalidated = true;
+        }
+        _invalidateWatcherPhotoCaches(dniKey);
+        const oldUrl = state.photosMap[dniKey];
+        if (oldUrl && String(oldUrl).startsWith('blob:')) {
+            try { URL.revokeObjectURL(oldUrl); } catch (_) {}
+            const oldIndex = state.photoObjectUrls.indexOf(oldUrl);
+            if (oldIndex >= 0) state.photoObjectUrls.splice(oldIndex, 1);
+        }
+        state.photosMap[dniKey] = fullPath;
         state.photoPaths[dniKey] = fullPath;
-        state.photosCount++;
-
-        state.records.push({
-            dni: parsed.dni,
-            dniKey,
-            nombres: parsed.nombres,
-            apellidos: parsed.apellidos,
-            extra: '',
-            hasPhoto: true,
-        });
-        added++;
+        state.photoMeta[dniKey] = {
+            source: fullPath,
+            filePath: fullPath,
+            width: result.width,
+            height: result.height,
+            sourceBytes: result.sourceBytes,
+            sourceVersion: result.sourceVersion,
+        };
+        if (existing) {
+            existing.hasPhoto = true;
+            updated++;
+        } else {
+            const record = {
+                dni: parsed.dni,
+                dniKey,
+                nombres: parsed.nombres,
+                apellidos: parsed.apellidos,
+                extra: '',
+                hasPhoto: true,
+            };
+            ensureRecordIdentity(record, dniKey);
+            state.records.push(record);
+            existingByKey.set(dniKey, record);
+            added++;
+        }
     }
 
-    if (!added) return 0;
+    if (!added && !updated) {
+        if (options.showImportStatus) showPhotoImportReady(state.photosCount, duplicateCount);
+        return 0;
+    }
+    state.photoLoadGeneration++;
+    state.photosCount = Object.keys(state.photosMap).filter(key => !!state.photosMap[key]).length;
+    state.reniecGeneration++;
 
     state.records.sort((a, b) =>
         (a.dniKey || '').localeCompare(b.dniKey || '') ||
         (a.dni || '').localeCompare(b.dni || '')
     );
+    const selectedIndex = selectedRecord ? state.records.indexOf(selectedRecord) : -1;
+    const selectedByKey = selectedIndex >= 0 ? selectedIndex : state.records.findIndex(r => getRecordKey(r) === selectedKey);
+    state.currentIndex = selectedByKey >= 0 ? selectedByKey : clamp(state.currentIndex, 0, Math.max(0, state.records.length - 1));
 
     if (Array.isArray(state.csvRows) && state.csvRows.length > 0) {
         try { mergeCSVData(); } catch (_) {}
@@ -220,11 +363,16 @@ async function ingestNewPhotoPaths(paths, silent = false) {
     saveSessionDebounced();
 
     if (!silent) {
-        showToast(`+${added} foto${added !== 1 ? 's' : ''} auto-importada${added !== 1 ? 's' : ''}`, 'success');
+        const parts = [];
+        if (added) parts.push(`${added} nueva${added !== 1 ? 's' : ''}`);
+        if (updated) parts.push(`${updated} actualizada${updated !== 1 ? 's' : ''}`);
+        showToast(`Fotos: ${parts.join(', ')}`, 'success');
     }
 
     // Enriquecimiento RENIEC en background (mismo flow que carga manual)
     try { enrichWithRENIEC(); } catch (_) {}
 
-    return added;
+    if (options.showImportStatus) showPhotoImportReady(state.photosCount, duplicateCount);
+
+    return added + updated;
 }

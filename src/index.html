@@ -19,21 +19,21 @@
                 <h1><i data-lucide="id-card" style="width:22px;height:22px;vertical-align:-4px;margin-right:6px;"></i>Generador de Carnets</h1>
                 <p class="subtitle">Combinación masiva de datos sobre plantilla</p>
                 <div class="ui-mode-toggle" role="group" aria-label="Modo de edición">
-                    <button type="button" id="btn-mode-simple" class="is-active" data-ui-mode="simple">Simple</button>
-                    <button type="button" id="btn-mode-advanced" data-ui-mode="advanced">Avanzado</button>
+                    <button type="button" id="btn-mode-simple" class="is-active" data-ui-mode="simple" aria-pressed="true">Simple</button>
+                    <button type="button" id="btn-mode-advanced" data-ui-mode="advanced" aria-pressed="false">Avanzado</button>
                 </div>
             </div>
             <div class="sidebar-content">
 
                 <!-- STEP 1: Template -->
                 <div class="config-section" id="section-template">
-                    <div class="section-header" data-toggle-section="section-template">
+                    <div class="section-header" data-toggle-section="section-template" role="button" tabindex="0" aria-expanded="true" aria-controls="section-template-body">
                         <div class="step-badge" id="badge-template">1</div>
                         <h3>Plantilla de Fondo</h3>
                         <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
-                    <div class="section-body">
-                        <div class="upload-zone" id="zone-template" data-file-input="input-template">
+                    <div class="section-body" id="section-template-body">
+                        <div class="upload-zone" id="zone-template" data-file-input="input-template" role="button" tabindex="0" aria-label="Seleccionar imagen de plantilla">
                             <div class="upload-icon"><i data-lucide="image" style="width:32px;height:32px;color:var(--accent-1)"></i></div>
                             <div class="upload-text">Arrastra o <strong>selecciona</strong> la imagen de plantilla</div>
                             <div class="file-name" id="template-file-name"></div>
@@ -44,13 +44,13 @@
 
                 <!-- STEP 2: Photos (PRIMARY DATA SOURCE) -->
                 <div class="config-section" id="section-photos">
-                    <div class="section-header" data-toggle-section="section-photos">
+                    <div class="section-header" data-toggle-section="section-photos" role="button" tabindex="0" aria-expanded="true" aria-controls="section-photos-body">
                         <div class="step-badge" id="badge-photos">2</div>
                         <h3>Fotos y Datos</h3>
                         <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
-                    <div class="section-body">
-                        <div class="upload-zone" id="zone-photos" data-file-input="input-photos-files">
+                    <div class="section-body" id="section-photos-body">
+                        <div class="upload-zone" id="zone-photos" data-file-input="input-photos-files" role="button" tabindex="0" aria-label="Seleccionar fotos. Los nombres deben incluir DNI, apellidos y nombres">
                             <div class="upload-icon"><i data-lucide="camera" style="width:32px;height:32px;color:var(--accent-1)"></i></div>
                             <div class="upload-text">Click para <strong>seleccionar las fotos</strong><br>
                                 <small style="color:var(--text-muted)">Formato: <strong>DNI - APELLIDOS NOMBRES.jpg</strong><br>Ej: 07971267 - CHACON VALDIVIESO JORGE LUIS.jpg</small>
@@ -66,7 +66,21 @@
                         <div class="photo-watch-action">
                             <button type="button" id="btn-watch-folder" class="btn btn-secondary btn-compact btn-watch-folder" data-watch-folder title="Vincular carpeta para auto-importar"><i data-lucide="eye"></i><span>Vincular carpeta (auto-importar)</span></button>
                         </div>
-                        <div id="watched-folder-status" class="watched-folder-status"></div>
+                        <div id="watched-folder-status" class="watched-folder-status" role="status" aria-live="polite" aria-atomic="true"></div>
+
+                        <div id="photo-import-status" class="photo-import-status" role="status" aria-live="polite" aria-atomic="false" aria-busy="false" hidden>
+                            <div class="photo-import-status-header">
+                                <div class="photo-import-status-copy">
+                                    <strong id="photo-import-title">Preparando fotos</strong>
+                                    <span id="photo-import-detail"></span>
+                                </div>
+                                <button type="button" id="photo-import-cancel" class="photo-import-cancel" data-photo-import-cancel aria-label="Cancelar importación de fotos" hidden>Cancelar</button>
+                            </div>
+                            <div id="photo-import-progress" class="photo-import-progress" role="progressbar" aria-labelledby="photo-import-title" aria-describedby="photo-import-detail" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 por ciento">
+                                <div id="photo-import-progress-fill" class="photo-import-progress-fill"></div>
+                            </div>
+                            <p id="photo-import-note" class="photo-import-note" hidden></p>
+                        </div>
 
                         <!-- Data stats -->
                         <div id="data-preview" style="display:none; margin-top: 12px;">
@@ -107,15 +121,34 @@
                     </div>
                 </div>
 
+                <!-- Session persistence (explicit opt-in) -->
+                <div class="config-section collapsed" id="section-privacy">
+                    <div class="section-header" data-toggle-section="section-privacy" role="button" tabindex="0" aria-expanded="false" aria-controls="section-privacy-body">
+                        <div class="step-badge step-badge-muted"><i data-lucide="lock-keyhole"></i></div>
+                        <h3>Privacidad y guardado</h3>
+                        <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
+                    </div>
+                    <div class="section-body" id="section-privacy-body" aria-hidden="true">
+                        <p class="section-help">La sesión puede contener DNI, nombres, rutas locales y datos de la plantilla. No se guarda al cerrar salvo que lo autorices.</p>
+                        <label class="privacy-save-toggle" title="Al desactivarlo se elimina inmediatamente la sesión guardada.">
+                            <input type="checkbox" id="session-persist">
+                            <span>
+                                <strong>Guardar esta sesión en este equipo</strong>
+                                <small id="session-persistence-detail">En Windows se cifra con AES-256-GCM y la clave se protege en el Administrador de credenciales.</small>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- RENIEC Token -->
                 <div class="config-section menu-section-reniec collapsed" id="section-reniec">
-                    <div class="section-header" data-toggle-section="section-reniec">
+                    <div class="section-header" data-toggle-section="section-reniec" role="button" tabindex="0" aria-expanded="false" aria-controls="section-reniec-body">
                         <div class="step-badge" id="badge-reniec"><i data-lucide="shield-check"></i></div>
                         <h3>RENIEC <small>— verificación automática de nombres</small></h3>
                         <span id="reniec-token-status" class="section-status"></span>
                         <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
-                    <div class="section-body">
+                    <div class="section-body" id="section-reniec-body" aria-hidden="true">
                         <p class="section-help">Al cargar fotos con DNI de 8 dígitos, se consulta RENIEC automáticamente para corregir nombres y apellidos.</p>
                         <div class="token-field">
                             <input type="password" id="field-reniec-token"
@@ -126,30 +159,30 @@
                             </button>
                         </div>
                         <div class="token-actions">
-                            <p>Token gratuito en <strong>apisperu.com</strong> — puedes guardarlo localmente.</p>
+                            <p>Token gratuito en <strong>apisperu.com</strong>. Solo se guarda si lo autorizas.</p>
                             <label class="token-save-toggle" title="Si lo desactivas, el token solo se usa mientras la app siga abierta.">
-                                <input type="checkbox" id="reniec-token-persist" data-reniec-persist checked>
-                                Guardar token
+                                <input type="checkbox" id="reniec-token-persist" data-reniec-persist>
+                                Guardar token en Windows
                             </label>
                             <div class="button-row">
                                 <button type="button" class="btn btn-primary btn-menu" id="btn-test-reniec" data-reniec-action="test-token" title="Consulta un DNI de prueba para verificar el token">Probar</button>
                                 <button type="button" class="btn btn-secondary btn-menu" data-reniec-action="clear-token">Limpiar</button>
                             </div>
                         </div>
-                        <div id="reniec-test-result" class="inline-result"></div>
+                        <div id="reniec-test-result" class="inline-result" role="status" aria-live="polite" aria-atomic="true"></div>
                     </div>
                 </div>
 
                 <!-- STEP 2b: CSV/Excel (OPTIONAL) -->
                 <div class="config-section collapsed advanced-only" id="section-data">
-                    <div class="section-header" data-toggle-section="section-data">
+                    <div class="section-header" data-toggle-section="section-data" role="button" tabindex="0" aria-expanded="false" aria-controls="section-data-body">
                         <div class="step-badge step-badge-muted" id="badge-data"><i data-lucide="settings"></i></div>
                         <h3>CSV / Excel <small style="font-weight:400;color:var(--text-muted);font-size:0.72rem">— opcional, datos extra</small></h3>
                         <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
-                    <div class="section-body">
+                    <div class="section-body" id="section-data-body" aria-hidden="true">
                         <p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:10px;">Si necesitas campos adicionales (cargo, área, etc.) puedes cargar un CSV/Excel. Se vinculará por DNI con las fotos.</p>
-                        <div class="upload-zone" id="zone-data" data-file-input="input-data">
+                        <div class="upload-zone" id="zone-data" data-file-input="input-data" role="button" tabindex="0" aria-label="Seleccionar archivo de datos CSV o Excel">
                             <div class="upload-icon"><i data-lucide="file-spreadsheet" style="width:32px;height:32px;color:var(--accent-1)"></i></div>
                             <div class="upload-text">Arrastra o <strong>selecciona</strong> un archivo CSV o XLSX</div>
                             <div class="file-name" id="data-file-name"></div>
@@ -175,12 +208,12 @@
 
                 <!-- STEP 3: Field Positions -->
                 <div class="config-section advanced-only" id="section-fields">
-                    <div class="section-header" data-toggle-section="section-fields">
+                    <div class="section-header" data-toggle-section="section-fields" role="button" tabindex="0" aria-expanded="true" aria-controls="section-fields-body">
                         <div class="step-badge" id="badge-fields">3</div>
                         <h3>Posición de Campos <small style="font-weight:400;color:var(--text-muted);font-size:0.72rem">— arrastra en vista previa</small></h3>
                         <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
-                    <div class="section-body">
+                    <div class="section-body" id="section-fields-body">
                         <!-- Nombres (first names) -->
                         <div class="field-config-block" style="margin-bottom:14px;">
                             <div class="field-label"><i data-lucide="type" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px;color:var(--accent-1);"></i>Nombres</div>
@@ -410,12 +443,12 @@
 
                 <!-- STEP 4: PDF Options -->
                 <div class="config-section menu-section-pdf collapsed" id="section-pdf">
-                    <div class="section-header" data-toggle-section="section-pdf">
+                    <div class="section-header" data-toggle-section="section-pdf" role="button" tabindex="0" aria-expanded="false" aria-controls="section-pdf-body">
                         <div class="step-badge" id="badge-pdf">4</div>
                         <h3>Opciones de Exportación</h3>
                         <span class="toggle-icon"><i data-lucide="chevron-down"></i></span>
                     </div>
-                    <div class="section-body">
+                    <div class="section-body" id="section-pdf-body" aria-hidden="true">
                         <div class="form-row">
                             <div class="form-group"><label>Ancho PDF (cm)</label><input type="number" id="pdf-width-cm" value="5.4" step="0.1" min="1"></div>
                             <div class="form-group"><label>Alto PDF (cm)</label><input type="number" id="pdf-height-cm" value="8.5" step="0.1" min="1"></div>
@@ -492,7 +525,7 @@
         <!-- ===== MAIN AREA ===== -->
         <main class="main-area">
             <!-- Update banner (shown when a new version is detected) -->
-            <div class="update-banner" id="update-banner" style="display:none;">
+            <div class="update-banner" id="update-banner" style="display:none;" role="status" aria-live="polite">
                 <i data-lucide="arrow-up-circle" style="width:14px;height:14px;flex-shrink:0;"></i>
                 <span id="update-banner-text">Nueva versión disponible</span>
                 <a id="update-banner-link" href="#" class="update-banner-link">Descargar</a>
@@ -542,8 +575,10 @@
                         <li><span class="step-num">4</span> Navega, exporta o imprime</li>
                     </ul>
                 </div>
-                <canvas id="carnet-canvas" style="display:none;"></canvas>
-                <div class="editor-hud" id="editor-hud" aria-live="polite">
+                <p id="canvas-instructions" class="sr-only">Editor de carnet. Pulsa Enter o Espacio para recorrer los elementos. Usa las flechas para mover el elemento seleccionado y Tab para acceder a sus controles.</p>
+                <div id="canvas-a11y-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+                <canvas id="carnet-canvas" style="display:none;" role="group" tabindex="0" aria-label="Editor visual del carnet" aria-describedby="canvas-instructions">Vista previa editable del carnet.</canvas>
+                <div class="editor-hud" id="editor-hud" role="region" aria-label="Controles del elemento seleccionado">
                     <!-- Header -->
                     <div class="editor-hud-top">
                         <div class="editor-hud-top-left">
@@ -635,7 +670,7 @@
                             <!-- Zoom slider -->
                             <div class="hud-slider-row">
                                 <span class="hud-slider-label">Zoom</span>
-                                <input type="range" id="hud-photo-zoom" min="0.20" max="5.00" step="0.05" value="1.00" data-hud-photo-input="zoom" disabled>
+                                <input type="range" id="hud-photo-zoom" min="0.20" max="5.00" step="0.05" value="1.00" data-hud-photo-input="zoom" aria-label="Zoom de la foto" disabled>
                                 <strong id="hud-photo-zoom-value" class="hud-slider-value hud-value-pill">1.00×</strong>
                             </div>
                             <!-- Rotation slider -->
@@ -674,7 +709,7 @@
                     <span class="filmstrip-arrow" id="filmstrip-arrow"><i data-lucide="chevron-up"></i></span>
                 </div>
                 <div class="filmstrip-container" id="filmstrip-container">
-                    <div class="filmstrip-track" id="filmstrip-track"></div>
+                    <div class="filmstrip-track" id="filmstrip-track" aria-label="Registros cargados"></div>
                 </div>
             </div>
 
@@ -683,7 +718,7 @@
                 <div class="status-left">
                     <div class="status-indicator">
                         <div class="status-dot" id="status-dot"></div>
-                        <span id="status-text">Sin datos cargados</span>
+                        <span id="status-text" role="status" aria-live="polite" aria-atomic="true">Sin datos cargados</span>
                     </div>
                 </div>
                 <div class="status-meta">
@@ -698,12 +733,12 @@
     </div>
 
     <!-- Loading Modal -->
-    <div class="modal-overlay" id="modal-loading">
-        <div class="modal-content">
+    <div class="modal-overlay" id="modal-loading" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-text" aria-hidden="true" tabindex="-1">
+        <div class="modal-content" aria-busy="true">
             <div class="spinner"></div>
             <h3 id="modal-title">Generando PDF...</h3>
-            <p id="modal-text">Procesando carnet 0 de 0</p>
-            <div class="progress-bar">
+            <p id="modal-text" aria-live="polite" aria-atomic="true">Procesando carnet 0 de 0</p>
+            <div class="progress-bar" id="modal-progress" role="progressbar" aria-label="Progreso de la operación" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 por ciento">
                 <div class="progress-fill" id="progress-fill"></div>
                 <span class="progress-percent" id="progress-percent">0%</span>
             </div>
@@ -712,10 +747,10 @@
     </div>
 
     <!-- Help / Shortcuts Modal -->
-    <div class="modal-overlay" id="modal-help" data-help-overlay>
+    <div class="modal-overlay" id="modal-help" data-help-overlay role="dialog" aria-modal="true" aria-labelledby="help-modal-title" aria-hidden="true" tabindex="-1">
         <div class="modal-content help-modal">
             <button type="button" class="help-close" data-help-action="close" title="Cerrar (Esc)" aria-label="Cerrar"><i data-lucide="x"></i></button>
-            <h3><i data-lucide="keyboard" style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;"></i>Atajos de teclado</h3>
+            <h3 id="help-modal-title"><i data-lucide="keyboard" style="width:18px;height:18px;vertical-align:-3px;margin-right:6px;"></i>Atajos de teclado</h3>
             <div class="help-grid">
                 <div class="help-col">
                     <h4>Navegación</h4>
@@ -748,7 +783,7 @@
     </div>
 
     <!-- Toast container -->
-    <div class="toast-container" id="toast-container"></div>
+    <div class="toast-container" id="toast-container" aria-label="Notificaciones"></div>
 
     <!-- Tauri bridge: expone electronAPI/desktopMeta vía invoke() -->
     <script src="js/tauri-bridge.js"></script>

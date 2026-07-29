@@ -1,20 +1,88 @@
 // ===================== LIVE PREVIEW & CONFIG STATE =====================
 
+const _inputHistoryCaptured = new WeakSet();
+
+function captureInputHistoryBaseline(input) {
+    if (!input || !state.records.length || state.history.suspend || state.drag.active ||
+            _inputHistoryCaptured.has(input)) return;
+    pushUndoSnapshot(`input:${input.id}`);
+    _inputHistoryCaptured.add(input);
+}
+
 function setupLivePreview() {
+    setupAccessibilityControls();
     const allInputs = document.querySelectorAll('.section-body input, .section-body select');
     allInputs.forEach(input => {
+        input.addEventListener('beforeinput', () => captureInputHistoryBaseline(input));
+        input.addEventListener('pointerdown', () => {
+            if (input.type === 'checkbox' || input.type === 'range' || input.type === 'color' || input.tagName === 'SELECT') {
+                captureInputHistoryBaseline(input);
+            }
+        });
+        input.addEventListener('keydown', () => {
+            if (input.type === 'checkbox' || input.tagName === 'SELECT') captureInputHistoryBaseline(input);
+        });
         input.addEventListener('input', (e) => handleInputChange(e));
-        input.addEventListener('change', (e) => handleInputChange(e));
+        input.addEventListener('change', (e) => {
+            handleInputChange(e);
+            _inputHistoryCaptured.delete(input);
+        });
+        input.addEventListener('blur', () => _inputHistoryCaptured.delete(input));
     });
+}
+
+function syncSectionAccessibility(header) {
+    const section = document.getElementById(header?.dataset.toggleSection);
+    const body = section?.querySelector('.section-body');
+    if (!section || !body) return;
+
+    const expanded = !section.classList.contains('collapsed');
+    if (!body.id) body.id = `${section.id}-body`;
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    header.setAttribute('aria-controls', body.id);
+    header.setAttribute('aria-expanded', String(expanded));
+    body.setAttribute('aria-hidden', String(!expanded));
+    if ('inert' in body) body.inert = !expanded;
+}
+
+function setupAccessibilityControls() {
+    document.querySelectorAll('[data-toggle-section]').forEach(header => {
+        if (header.dataset.a11yBound === '1') return;
+        header.dataset.a11yBound = '1';
+        syncSectionAccessibility(header);
+        header.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            header.click();
+        });
+
+        const section = document.getElementById(header.dataset.toggleSection);
+        if (section && typeof MutationObserver !== 'undefined') {
+            new MutationObserver(() => syncSectionAccessibility(header))
+                .observe(section, { attributes: true, attributeFilter: ['class'] });
+        }
+    });
+
+    const syncModeButtons = () => {
+        document.querySelectorAll('[data-ui-mode]').forEach(button => {
+            button.setAttribute('aria-pressed', String(button.classList.contains('is-active')));
+        });
+    };
+    syncModeButtons();
+    if (typeof MutationObserver !== 'undefined') {
+        new MutationObserver(syncModeButtons)
+            .observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
 }
 
 function handleInputChange(e) {
     if (!state.records.length) return;
     invalidatePreflightReport();
     saveSessionDebounced();
-    const isPhotoInput = e.target.id.startsWith('field-photo-');
+    const isPhotoInput = String(e.target.id || '').startsWith('field-photo-');
     const isIndividualCheckbox = e.target.id === 'photo-individual-mode' || e.target.id === 'hud-photo-individual';
-    const shouldTrack = !state.history.suspend && !state.drag.active &&
+    const shouldTrack = !state.history.suspend && !state.drag.active && !_inputHistoryCaptured.has(e.target) &&
         (e.type === 'change' || isIndividualCheckbox);
     if (shouldTrack) {
         pushUndoSnapshot(`input:${e.target.id}`);

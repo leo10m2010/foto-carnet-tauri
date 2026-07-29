@@ -2,6 +2,7 @@
 
 let _filmstripObserver = null;
 let _filmstripRefreshTimer = null;
+let _filmstripActiveIndex = -1;
 
 function getRecordDisplayName(record) {
     return [record.apellidos, record.nombres].filter(Boolean).join(' ').trim();
@@ -82,15 +83,22 @@ function renderFilmstrip() {
 
     const fragment = document.createDocumentFragment();
     state.records.forEach((record, i) => {
-        const card = document.createElement('div');
+        const card = document.createElement('button');
+        card.type = 'button';
         card.className = 'filmstrip-thumb' + (i === state.currentIndex ? ' is-active' : '');
         card.dataset.index = i;
-        card.title = `${i + 1}. ${getRecordDisplayName(record)}`;
+        card.dataset.recordId = getRecordIdentity(record);
+        const displayName = getRecordDisplayName(record) || record.dni || `Registro ${i + 1}`;
+        card.title = `${i + 1}. ${displayName}`;
+        card.setAttribute('aria-label', `Registro ${i + 1} de ${state.records.length}: ${displayName}`);
+        card.setAttribute('aria-current', i === state.currentIndex ? 'true' : 'false');
+        card.tabIndex = i === state.currentIndex ? 0 : -1;
         card.addEventListener('click', () => goToFilmstripIndex(i));
+        card.addEventListener('keydown', event => handleFilmstripKeydown(event, i));
 
         card.innerHTML =
             `<div class="thumb-img-wrap">` +
-                `<canvas class="thumb-canvas" data-index="${i}"></canvas>` +
+                `<canvas class="thumb-canvas" data-index="${i}" width="1" height="1" aria-hidden="true"></canvas>` +
                 `<span class="thumb-num">${i + 1}</span>` +
             `</div>` +
             `<div class="thumb-name">${i + 1}</div>`;
@@ -99,6 +107,7 @@ function renderFilmstrip() {
     });
 
     track.appendChild(fragment);
+    _filmstripActiveIndex = state.currentIndex;
 
     const container = document.getElementById('filmstrip-container');
     _filmstripObserver = new IntersectionObserver(
@@ -120,22 +129,53 @@ function renderFilmstrip() {
     if (state.filmstripVisible) requestAnimationFrame(() => scrollFilmstripToActive(false));
 }
 
+function cancelFilmstripWork() {
+    clearTimeout(_filmstripRefreshTimer);
+    _filmstripRefreshTimer = null;
+    if (_filmstripObserver) {
+        _filmstripObserver.disconnect();
+        _filmstripObserver = null;
+    }
+}
+
 function _loadThumb(canvas) {
     const i = Number(canvas.dataset.index);
     if (!state.templateImage || i < 0 || i >= state.records.length) return;
+    const card = canvas.closest('.filmstrip-thumb');
+    if (card && card.dataset.recordId !== getRecordIdentity(state.records[i])) return;
 
     // Render at ~96px wide (2× display density for sharpness) into the thumb canvas
     const scale = Math.max(0.04, 96 / (state.templateImage.width || 630));
-    renderCarnet(i, canvas, scale).catch(() => {});
+    renderCarnet(i, canvas, scale, { photoVariant: 'thumbnail' }).catch(() => {});
 }
 
 function updateFilmstripActive() {
     const track = document.getElementById('filmstrip-track');
     if (!track || !track.children.length) return;
-    const prev = track.querySelector('.filmstrip-thumb.is-active');
-    if (prev) prev.classList.remove('is-active');
-    const next = track.children[state.currentIndex];
-    if (next) next.classList.add('is-active');
+    const setActive = (index, active) => {
+        const card = track.children[index];
+        if (!card) return;
+        card.classList.toggle('is-active', active);
+        card.setAttribute('aria-current', String(active));
+        card.tabIndex = active ? 0 : -1;
+    };
+    if (_filmstripActiveIndex !== state.currentIndex) setActive(_filmstripActiveIndex, false);
+    setActive(state.currentIndex, true);
+    _filmstripActiveIndex = state.currentIndex;
+}
+
+function handleFilmstripKeydown(event, index) {
+    let nextIndex = index;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = Math.min(state.records.length - 1, index + 1);
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = Math.max(0, index - 1);
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = state.records.length - 1;
+    else return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    goToFilmstripIndex(nextIndex);
+    document.getElementById('filmstrip-track')?.children[nextIndex]?.focus();
 }
 
 function scrollFilmstripToActive(smooth = true) {
@@ -179,7 +219,9 @@ function updateFilmstripTooltips() {
     Array.from(track.children).forEach((card, i) => {
         const record = state.records[i];
         if (!record) return;
-        card.title = `${i + 1}. ${getRecordDisplayName(record)}`;
+        const displayName = getRecordDisplayName(record) || record.dni || `Registro ${i + 1}`;
+        card.title = `${i + 1}. ${displayName}`;
+        card.setAttribute('aria-label', `Registro ${i + 1} de ${state.records.length}: ${displayName}`);
     });
 }
 
